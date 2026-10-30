@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/icon.png" width="160" alt="GDroid LAN Logo" />
+  <img src="docs/icon.png" width="160" alt="gLAN Logo" />
 </p>
 
-<h1 align="center">GDroid LAN — Rede Virtual P2P para Multiplayer</h1>
+<h1 align="center">gLAN — Rede Virtual P2P para Multiplayer</h1>
 
 <p align="center">
   <b>Conecte salas multiplayer do GDroid e jogos LAN à distância com criptografia ponta a ponta, limite ajustável de até 8 jogadores e moderação em tempo real.</b>
@@ -10,11 +10,11 @@
 
 ---
 
-## Principais Recursos (v2.2)
+## Principais Recursos
 
-- **Conta Única por Instalação (Apenas Nome):** ao abrir pela primeira vez, o jogador informa somente o Nome (sem senha e sem login repetido). A conta fica salva automaticamente apenas enquanto o aplicativo permanecer instalado (`allowBackup="false"`).
+- **Conta Única por Instalação (Apenas Nome):** na primeira abertura, o jogador informa apenas o Nome (sem senha e sem login repetido). A conta permanece salva enquanto o aplicativo não for desinstalado (`allowBackup="false"`).
 - **Limite Ajustável até 8 Jogadores (`-` / `+`):** controle direto pelos botões `-` e `+` de **2 até 8 jogadores** na partida.
-- **Interface Limpa e Organizada:** layout direto sem excesso de blocos; os painéis de **Jogadores na Sala** e **Rede Ativa** aparecem de forma contextual somente quando a sala está em uso.
+- **Interface Limpa e Organizada:** layout direto sem excesso de blocos; os painéis de **Jogadores na Sala** e **Rede** aparecem de forma contextual somente quando a sala está ativa.
 - **Lista de Jogadores e Moderação em Tempo Real:** exibe quem entrou na sala com opção imediata de **Remover** ou **Remover e Bloquear**.
 - **Split-Tunnel (`10.10.0.0/24`) + Anti-CGNAT:** somente o tráfego `10.10.0.x` passa pelo túnel criptografado (`AES-128-GCM`), combinando conexão Direta P2P (UDP Hole-Punching) e contingência automática via Ponte TLS.
 

@@ -226,7 +226,7 @@ class MainActivity : AppCompatActivity() {
 
         b.btnCompartilharCodigo.setOnClickListener {
             val anfitriao = contaAtiva?.displayName ?: "Anfitrião"
-            val msg = "Sala GDroid LAN de $anfitriao\n" +
+            val msg = "Sala gLAN de $anfitriao\n" +
                 "Código da Sala: $codigoHostAtual\n" +
                 "IP no GDroid: ${TunnelProtocol.HOST_VIRTUAL_IP}"
             val send = Intent(Intent.ACTION_SEND).apply {
@@ -441,9 +441,9 @@ class MainActivity : AppCompatActivity() {
             b.btnAcaoPrincipal.setTextColor(Color.WHITE)
         } else {
             b.btnAcaoPrincipal.text = if (modoHostSelecionado) "INICIAR SERVIDOR" else "CONECTAR NA SALA"
-            val cor = if (modoHostSelecionado) "#00E676" else "#00B8D4"
+            val cor = if (modoHostSelecionado) "#1890FF" else "#00A8E8"
             b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
-            b.btnAcaoPrincipal.setTextColor(Color.parseColor("#04140B"))
+            b.btnAcaoPrincipal.setTextColor(Color.WHITE)
         }
     }
 

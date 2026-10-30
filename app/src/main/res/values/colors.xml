@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_obsidian">#070B10</color>
-    <color name="surface_card">#101722</color>
-    <color name="surface_elevated">#16202F</color>
-    <color name="neon_emerald">#00E676</color>
-    <color name="neon_cyan">#00B8D4</color>
+    <color name="bg_obsidian">#050C1C</color>
+    <color name="surface_card">#0B162B</color>
+    <color name="surface_elevated">#12223F</color>
+    <color name="neon_emerald">#1890FF</color>
+    <color name="neon_cyan">#00D4FF</color>
     <color name="text_primary">#F1F5F9</color>
     <color name="text_secondary">#94A3B8</color>
-    <color name="stroke_subtle">#263548</color>
+    <color name="stroke_subtle">#1E3356</color>
     <color name="danger_red">#FF5252</color>
     <color name="warning_amber">#FFCA28</color>
 </resources>

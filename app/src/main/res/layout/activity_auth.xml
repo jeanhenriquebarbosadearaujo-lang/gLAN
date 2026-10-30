@@ -23,7 +23,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
-            android:text="GDroid LAN"
+            android:text="gLAN"
             android:textColor="@color/text_primary"
             android:textSize="26sp"
             android:textStyle="bold" />
@@ -103,7 +103,7 @@
                     android:layout_height="54dp"
                     android:layout_marginTop="18dp"
                     android:text="CRIAR CONTA E ENTRAR"
-                    android:textColor="#04140B"
+                    android:textColor="#FFFFFF"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     app:backgroundTint="@color/neon_emerald"

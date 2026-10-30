@@ -343,7 +343,7 @@ class GdroidLanVpnService : VpnService() {
         if (tunInterface != null) return true
         val virtualIp = TunnelProtocol.nodeIp(nodeId)
         val pfd = Builder()
-            .setSession("GDroid LAN ($activeRoomCode)")
+            .setSession("gLAN ($activeRoomCode)")
             .setMtu(TunnelProtocol.VPN_MTU)
             .addAddress(virtualIp, 24)
             .addRoute("10.10.0.0", 24)
@@ -1117,7 +1117,7 @@ class GdroidLanVpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "GDroid LAN VPN",
+                "gLAN Rede Virtual",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Mantém a rede virtual LAN ativa durante a partida"
@@ -1140,7 +1140,7 @@ class GdroidLanVpnService : VpnService() {
 
         val notif: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_vpn)
-            .setContentTitle("GDroid LAN Ativo")
+            .setContentTitle("gLAN Ativo")
             .setContentText(contentText)
             .setOngoing(true)
             .setContentIntent(openIntent)
