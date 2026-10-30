@@ -12,23 +12,33 @@ import android.graphics.Color
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.text.InputFilter
 import android.view.View
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.gdroidlan.app.auth.AccountManagerStore
 import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.databinding.ActivityMainBinding
+import com.gdroidlan.app.databinding.ItemPeerRowBinding
 import com.gdroidlan.app.vpn.GdroidLanVpnService
 import com.gdroidlan.app.vpn.TunnelProtocol
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
     private val prefs by lazy { getSharedPreferences("gdroid_lan_prefs", Context.MODE_PRIVATE) }
 
+    private var contaAtiva: AccountManagerStore.UserAccount? = null
     private var modoHostSelecionado = true
     private var codigoHostAtual = ""
+    private var limiteConvidados = 8
+
     private var aguardandoPermissaoParaHost = true
     private var codigoPendenteConexao = ""
 
@@ -37,7 +47,7 @@ class MainActivity : AppCompatActivity() {
             if (res.resultCode == Activity.RESULT_OK) {
                 dispararServicoVpn(aguardandoPermissaoParaHost, codigoPendenteConexao)
             } else {
-                toast("Aceite a permissão de VPN do Android para criar a rede LAN do jogo.")
+                toast("Autorize a permissão de VPN do Android para ativar a rede local virtual.")
             }
         }
 
@@ -54,10 +64,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val conta = AccountManagerStore.getActiveAccount(this)
+        if (conta == null) {
+            startActivity(Intent(this, AuthActivity::class.java))
+            finish()
+            return
+        }
+        contaAtiva = conta
+
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
         pedirPermissaoNotificacaoSeNecessario()
+        atualizarCabecalhoConta()
 
         codigoHostAtual = prefs.getString("host_room_code", null)
             ?.takeIf { it.length >= 6 }
@@ -66,17 +86,30 @@ class MainActivity : AppCompatActivity() {
             }
         b.txtCodigoHost.text = codigoHostAtual
 
+        limiteConvidados = prefs.getInt("max_clients", 8).coerceIn(1, 50)
+        renderizarSeletorCapacidade()
+
         prefs.getString("last_friend_code", null)?.let { salvo ->
             b.edtCodigoAmigo.setText(salvo)
         }
 
         configurarAbasModo()
-        configurarBotoes()
+        configurarBotoesConta()
+        configurarSeletorCapacidade()
+        configurarBotoesPrincipais()
 
         GdroidLanVpnService.onManualPongToast = { rtt, modo ->
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
-                    toast("Conexão 100% ativa! Resposta em ${rtt} ms ($modo)")
+                    toast("Conexão verificada: resposta em ${rtt} ms ($modo).")
+                }
+            }
+        }
+
+        GdroidLanVpnService.onModerationEventToast = { msg ->
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    toast(msg)
                 }
             }
         }
@@ -90,6 +123,145 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         GdroidLanVpnService.removeListener(stateListener)
         super.onStop()
+    }
+
+    private fun atualizarCabecalhoConta() {
+        val c = contaAtiva ?: return
+        b.txtNomeConta.text = c.displayName
+        b.txtUsuarioConta.text = "@${c.username}"
+    }
+
+    private fun configurarBotoesConta() {
+        b.btnEditarNome.setOnClickListener {
+            val atual = contaAtiva?.displayName.orEmpty()
+            val container = FrameLayout(this)
+            val padH = (20 * resources.displayMetrics.density).toInt()
+            val padV = (8 * resources.displayMetrics.density).toInt()
+            val input = EditText(this).apply {
+                setText(atual)
+                setSelection(atual.length)
+                hint = "Nome de exibição"
+                setTextColor(Color.WHITE)
+                setHintTextColor(Color.parseColor("#94A3B8"))
+                filters = arrayOf(InputFilter.LengthFilter(24))
+            }
+            val lp = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(padH, padV, padH, 0)
+            }
+            container.addView(input, lp)
+
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Alterar Nome de Exibição")
+                .setMessage("Este nome será exibido na lista de participantes da sala.")
+                .setView(container)
+                .setPositiveButton("Salvar") { _, _ ->
+                    val atualizado = AccountManagerStore.updateDisplayName(
+                        this,
+                        input.text?.toString().orEmpty()
+                    )
+                    if (atualizado == null) {
+                        toast("Informe pelo menos 2 caracteres para o nome.")
+                    } else {
+                        contaAtiva = atualizado
+                        atualizarCabecalhoConta()
+                        sincronizarConfiguracaoEmExecucao()
+                        toast("Nome atualizado para ${atualizado.displayName}.")
+                    }
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        }
+
+        b.btnSairConta.setOnClickListener {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Sair da Conta")
+                .setMessage("Deseja encerrar sua sessão atual neste aparelho?")
+                .setPositiveButton("Sair") { _, _ ->
+                    val stop = Intent(this, GdroidLanVpnService::class.java).apply {
+                        action = GdroidLanVpnService.ACTION_STOP
+                    }
+                    startService(stop)
+                    AccountManagerStore.logout(this)
+                    startActivity(Intent(this, AuthActivity::class.java))
+                    finish()
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        }
+    }
+
+    private fun configurarSeletorCapacidade() {
+        b.btnMenosVagas.setOnClickListener {
+            definirLimiteConvidados((limiteConvidados - 1).coerceAtLeast(1))
+        }
+        b.btnMaisVagas.setOnClickListener {
+            definirLimiteConvidados((limiteConvidados + 1).coerceAtMost(50))
+        }
+
+        val presets = listOf(
+            b.btnPreset2 to 2,
+            b.btnPreset4 to 4,
+            b.btnPreset8 to 8,
+            b.btnPreset16 to 16,
+            b.btnPreset32 to 32
+        )
+        for ((botao, valor) in presets) {
+            botao.setOnClickListener { definirLimiteConvidados(valor) }
+        }
+    }
+
+    private fun definirLimiteConvidados(novoLimite: Int) {
+        limiteConvidados = novoLimite.coerceIn(1, 50)
+        prefs.edit().putString("max_clients_set", "1").putInt("max_clients", limiteConvidados).apply()
+        renderizarSeletorCapacidade()
+        sincronizarConfiguracaoEmExecucao()
+    }
+
+    private fun renderizarSeletorCapacidade() {
+        val labelConvidados = if (limiteConvidados == 1) "1 convidado" else "$limiteConvidados convidados"
+        val totalJogadores = limiteConvidados + 1
+        b.txtLimiteVagas.text = labelConvidados
+        b.txtResumoCapacidade.text = "Capacidade total na partida: $totalJogadores jogadores"
+
+        val presets = listOf(
+            b.btnPreset2 to 2,
+            b.btnPreset4 to 4,
+            b.btnPreset8 to 8,
+            b.btnPreset16 to 16,
+            b.btnPreset32 to 32
+        )
+        for ((botao, valor) in presets) {
+            estilizarBotaoPreset(botao, ativo = (limiteConvidados == valor))
+        }
+    }
+
+    private fun estilizarBotaoPreset(btn: MaterialButton, ativo: Boolean) {
+        if (ativo) {
+            btn.setTextColor(Color.parseColor("#00E676"))
+            btn.strokeColor = ColorStateList.valueOf(Color.parseColor("#00E676"))
+        } else {
+            btn.setTextColor(Color.parseColor("#94A3B8"))
+            btn.strokeColor = ColorStateList.valueOf(Color.parseColor("#263548"))
+        }
+    }
+
+    private fun sincronizarConfiguracaoEmExecucao() {
+        val snap = GdroidLanVpnService.currentSnapshot
+        val rodando = snap.phase != GdroidLanVpnService.StatusPhase.OFFLINE &&
+            snap.phase != GdroidLanVpnService.StatusPhase.ERROR
+        if (!rodando) {
+            b.txtContadorSala.text = "0 / $limiteConvidados"
+            return
+        }
+        val cfgIntent = Intent(this, GdroidLanVpnService::class.java).apply {
+            action = GdroidLanVpnService.ACTION_UPDATE_CONFIG
+            putExtra(GdroidLanVpnService.EXTRA_MAX_CLIENTS, limiteConvidados)
+            putExtra(GdroidLanVpnService.EXTRA_PLAYER_NAME, contaAtiva?.displayName ?: "Jogador")
+        }
+        startService(cfgIntent)
     }
 
     private fun pedirPermissaoNotificacaoSeNecessario() {
@@ -121,7 +293,7 @@ class MainActivity : AppCompatActivity() {
                 val idCorreto = if (GdroidLanVpnService.currentSnapshot.isHost) R.id.btnModoHost else R.id.btnModoCliente
                 if (checkedId != idCorreto) {
                     b.grupoModo.check(idCorreto)
-                    toast("Desconecte a sessão atual antes de trocar entre Servidor e Cliente.")
+                    toast("Encerre a conexão atual antes de alternar entre Servidor e Cliente.")
                 }
                 return@addOnButtonCheckedListener
             }
@@ -136,49 +308,49 @@ class MainActivity : AppCompatActivity() {
         b.cardCliente.visibility = if (modoHostSelecionado) View.GONE else View.VISIBLE
     }
 
-    private fun configurarBotoes() {
+    private fun configurarBotoesPrincipais() {
         b.btnCopiarCodigoHost.setOnClickListener {
             copiarTexto("Código da Sala", codigoHostAtual)
-            toast("Código $codigoHostAtual copiado!")
+            toast("Código $codigoHostAtual copiado.")
         }
 
         b.btnCompartilharCodigo.setOnClickListener {
-            val msg = "Entre na minha sala do GDroid LAN!\n" +
+            val anfitriao = contaAtiva?.displayName ?: "Anfitrião"
+            val msg = "Sala GDroid LAN de $anfitriao\n" +
                 "Código da Sala: $codigoHostAtual\n" +
-                "IP do Servidor no GDroid: ${TunnelProtocol.HOST_VIRTUAL_IP}"
+                "Endereço IP no GDroid: ${TunnelProtocol.HOST_VIRTUAL_IP}"
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, msg)
             }
-            startActivity(Intent.createChooser(send, "Enviar código para amigo"))
+            startActivity(Intent.createChooser(send, "Compartilhar código da sala"))
         }
 
         b.btnGerarNovoCodigo.setOnClickListener {
             val fase = GdroidLanVpnService.currentSnapshot.phase
             if (fase != GdroidLanVpnService.StatusPhase.OFFLINE && fase != GdroidLanVpnService.StatusPhase.ERROR) {
-                toast("Desligue o servidor primeiro para gerar outro código.")
+                toast("Encerre o servidor atual antes de gerar um novo código.")
                 return@setOnClickListener
             }
             codigoHostAtual = RoomCrypto.generateRoomCode()
             prefs.edit().putString("host_room_code", codigoHostAtual).apply()
             b.txtCodigoHost.text = codigoHostAtual
-            toast("Novo código gerado: $codigoHostAtual")
+            toast("Novo código gerado: $codigoHostAtual.")
         }
 
         b.btnCopiarIpHost.setOnClickListener {
             copiarTexto("IP GDroid", TunnelProtocol.HOST_VIRTUAL_IP)
-            toast("IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado!")
+            toast("Endereço IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado.")
         }
 
         b.btnCopiarIpParaJogo.setOnClickListener {
             copiarTexto("IP GDroid", TunnelProtocol.HOST_VIRTUAL_IP)
-            toast("IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado! Cole no GDroid.")
+            toast("Endereço IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado para usar no GDroid.")
         }
 
         b.btnColarCodigoAmigo.setOnClickListener {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
             val raw = cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
-            // Se a mensagem inteira do WhatsApp foi copiada, extrai o código de 6 caracteres após "Sala:" ou usa o texto limpo
             val extraido = Regex("""(?:Sala:\s*)?([A-Za-z0-9]{6})""").find(raw)?.groupValues?.getOrNull(1)
                 ?: RoomCrypto.normalizeRoomCode(raw).take(10)
             val norm = RoomCrypto.normalizeRoomCode(extraido)
@@ -186,7 +358,7 @@ class MainActivity : AppCompatActivity() {
                 b.edtCodigoAmigo.setText(norm)
                 b.edtCodigoAmigo.setSelection(norm.length)
             } else {
-                toast("Nenhum código válido encontrado na área de transferência.")
+                toast("Nenhum código de sala válido encontrado na área de transferência.")
             }
         }
 
@@ -208,7 +380,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 val digitado = RoomCrypto.normalizeRoomCode(b.edtCodigoAmigo.text?.toString().orEmpty())
                 if (digitado.length < 4) {
-                    toast("Digite o Código da Sala do seu amigo (ex.: K7P9M2).")
+                    toast("Informe o Código da Sala do anfitrião (ex.: K7P9M2).")
                     return@setOnClickListener
                 }
                 prefs.edit().putString("last_friend_code", digitado).apply()
@@ -216,12 +388,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        b.btnDesbloquearRemovidos.setOnClickListener {
+            val clearIntent = Intent(this, GdroidLanVpnService::class.java).apply {
+                action = GdroidLanVpnService.ACTION_CLEAR_BLOCKS
+            }
+            startService(clearIntent)
+            toast("Participantes bloqueados nesta sessão foram liberados.")
+        }
+
         b.btnTestarPing.setOnClickListener {
             val pingIntent = Intent(this, GdroidLanVpnService::class.java).apply {
                 action = GdroidLanVpnService.ACTION_MANUAL_PING
             }
             startService(pingIntent)
-            toast("Enviando teste de ping pelo túnel...")
+            toast("Verificando latência com a sala...")
         }
     }
 
@@ -237,11 +417,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dispararServicoVpn(asHost: Boolean, code: String) {
+        val conta = contaAtiva
         val i = Intent(this, GdroidLanVpnService::class.java).apply {
             action = if (asHost) GdroidLanVpnService.ACTION_START_HOST else GdroidLanVpnService.ACTION_START_CLIENT
             putExtra(GdroidLanVpnService.EXTRA_ROOM_CODE, code)
+            putExtra(GdroidLanVpnService.EXTRA_PLAYER_NAME, conta?.displayName ?: "Jogador")
+            putExtra(GdroidLanVpnService.EXTRA_ACCOUNT_UID, conta?.accountUid ?: 0L)
+            putExtra(GdroidLanVpnService.EXTRA_MAX_CLIENTS, limiteConvidados)
         }
         ContextCompat.startForegroundService(this, i)
+    }
+
+    private fun confirmarRemocaoParticipante(membro: TunnelProtocol.RoomMemberInfo) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Remover do Servidor")
+            .setMessage(
+                "Deseja desconectar ${membro.displayName} (${membro.virtualIp}) desta sala?\n\n" +
+                    "• Remover e Bloquear: impede nova entrada até você desbloquear ou reiniciar a sala.\n" +
+                    "• Apenas Desconectar: encerra a conexão atual, permitindo reconectar depois."
+            )
+            .setPositiveButton("Remover e Bloquear") { _, _ ->
+                enviarComandoKick(membro.nodeId, bloquearSessao = true)
+            }
+            .setNeutralButton("Apenas Desconectar") { _, _ ->
+                enviarComandoKick(membro.nodeId, bloquearSessao = false)
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun enviarComandoKick(nodeId: Int, bloquearSessao: Boolean) {
+        val kickIntent = Intent(this, GdroidLanVpnService::class.java).apply {
+            action = GdroidLanVpnService.ACTION_KICK_PEER
+            putExtra(GdroidLanVpnService.EXTRA_TARGET_NODE_ID, nodeId)
+            putExtra(GdroidLanVpnService.EXTRA_BLOCK_SESSION, bloquearSessao)
+        }
+        startService(kickIntent)
     }
 
     private fun renderizarEstado(snap: GdroidLanVpnService.TunnelSnapshot) {
@@ -261,12 +472,12 @@ class MainActivity : AppCompatActivity() {
                 b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#2694A3B8"))
             }
             GdroidLanVpnService.StatusPhase.CONNECTING -> {
-                b.txtBadgeStatus.text = "CONECTANDO..."
+                b.txtBadgeStatus.text = "CONECTANDO"
                 b.txtBadgeStatus.setTextColor(Color.parseColor("#FFCA28"))
                 b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#26FFCA28"))
             }
             GdroidLanVpnService.StatusPhase.WAITING_FRIEND -> {
-                b.txtBadgeStatus.text = "AGUARDANDO AMIGO"
+                b.txtBadgeStatus.text = "AGUARDANDO"
                 b.txtBadgeStatus.setTextColor(Color.parseColor("#00B8D4"))
                 b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#2600B8D4"))
             }
@@ -276,7 +487,7 @@ class MainActivity : AppCompatActivity() {
                 b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#2600E676"))
             }
             GdroidLanVpnService.StatusPhase.ERROR -> {
-                b.txtBadgeStatus.text = "ERRO"
+                b.txtBadgeStatus.text = "ATENÇÃO"
                 b.txtBadgeStatus.setTextColor(Color.parseColor("#FF5252"))
                 b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#26FF5252"))
             }
@@ -287,26 +498,89 @@ class MainActivity : AppCompatActivity() {
 
         val pingLabel = if (snap.pingMs > 0) "${snap.pingMs} ms • ${snap.routeMode}" else snap.routeMode
         b.txtPingRota.text = pingLabel
-        b.txtAmigosConectados.text = if (snap.connectedPeersCount > 0) {
-            "${snap.connectedPeersCount} online"
+
+        val maxExibido = if (ativo) snap.maxAllowedClients else limiteConvidados
+        b.txtAmigosConectados.text = "${snap.connectedPeersCount} / $maxExibido"
+        b.txtContadorSala.text = "${snap.connectedPeersCount} / $maxExibido"
+        b.txtTrafego.text = "Env: ${formatarBytes(snap.txBytes)} • Rec: ${formatarBytes(snap.rxBytes)}"
+
+        if (ativo && snap.isHost && snap.blockedCount > 0) {
+            b.btnDesbloquearRemovidos.visibility = View.VISIBLE
+            b.btnDesbloquearRemovidos.text = "Desbloquear (${snap.blockedCount})"
         } else {
-            "0"
+            b.btnDesbloquearRemovidos.visibility = View.GONE
         }
-        b.txtTrafego.text = "↑ ${formatarBytes(snap.txBytes)} • ↓ ${formatarBytes(snap.rxBytes)}"
+
+        renderizarListaParticipantes(snap, ativo)
 
         b.edtCodigoAmigo.isEnabled = !ativo
         b.btnColarCodigoAmigo.isEnabled = !ativo
         b.btnTestarPing.isEnabled = (snap.phase == GdroidLanVpnService.StatusPhase.ONLINE)
 
         if (ativo) {
-            b.btnAcaoPrincipal.text = if (snap.isHost) "⏹ DESLIGAR SERVIDOR LAN" else "⏹ DESCONECTAR DA SALA"
+            b.btnAcaoPrincipal.text = if (snap.isHost) "ENCERRAR SERVIDOR LAN" else "DESCONECTAR DA SALA"
             b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF5252"))
             b.btnAcaoPrincipal.setTextColor(Color.WHITE)
         } else {
-            b.btnAcaoPrincipal.text = if (modoHostSelecionado) "⚡ LIGAR SERVIDOR LAN" else "🚀 CONECTAR NA SALA"
+            b.btnAcaoPrincipal.text = if (modoHostSelecionado) "INICIAR SERVIDOR LAN" else "CONECTAR NA SALA"
             val cor = if (modoHostSelecionado) "#00E676" else "#00B8D4"
             b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
             b.btnAcaoPrincipal.setTextColor(Color.parseColor("#04140B"))
+        }
+    }
+
+    private fun renderizarListaParticipantes(snap: GdroidLanVpnService.TunnelSnapshot, ativo: Boolean) {
+        b.containerParticipantes.removeAllViews()
+        if (!ativo || snap.members.isEmpty()) {
+            b.txtSemParticipantes.visibility = View.VISIBLE
+            b.txtSemParticipantes.text = if (ativo) {
+                "Sincronizando participantes da sala..."
+            } else {
+                "Nenhuma sessão ativa no momento."
+            }
+            return
+        }
+
+        b.txtSemParticipantes.visibility = View.GONE
+        for (membro in snap.members) {
+            val row = ItemPeerRowBinding.inflate(layoutInflater, b.containerParticipantes, false)
+            row.txtNomeParticipante.text = membro.displayName
+
+            when {
+                membro.isHost -> {
+                    row.txtCargoParticipante.text = if (snap.isHost) "ANFITRIÃO (VOCÊ)" else "ANFITRIÃO"
+                    row.txtCargoParticipante.setTextColor(Color.parseColor("#00E676"))
+                    row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600E676"))
+                }
+                !snap.isHost && membro.nodeId == snap.myNodeId -> {
+                    row.txtCargoParticipante.text = "VOCÊ"
+                    row.txtCargoParticipante.setTextColor(Color.parseColor("#00B8D4"))
+                    row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600B8D4"))
+                }
+                else -> {
+                    row.txtCargoParticipante.text = "CONVIDADO"
+                    row.txtCargoParticipante.setTextColor(Color.parseColor("#00B8D4"))
+                    row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600B8D4"))
+                }
+            }
+
+            val pingInfo = when {
+                membro.isHost && snap.isHost -> "Servidor Principal"
+                membro.pingMs > 0 -> "${membro.pingMs} ms • ${membro.routeLabel}"
+                else -> membro.routeLabel
+            }
+            row.txtInfoRedeParticipante.text = "${membro.virtualIp} • $pingInfo"
+
+            if (snap.isHost && !membro.isHost) {
+                row.btnRemoverParticipante.visibility = View.VISIBLE
+                row.btnRemoverParticipante.setOnClickListener {
+                    confirmarRemocaoParticipante(membro)
+                }
+            } else {
+                row.btnRemoverParticipante.visibility = View.GONE
+            }
+
+            b.containerParticipantes.addView(row.root)
         }
     }
 

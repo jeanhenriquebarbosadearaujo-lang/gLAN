@@ -44,17 +44,26 @@ class GdroidLanVpnService : VpnService() {
         val phase: StatusPhase = StatusPhase.OFFLINE,
         val isHost: Boolean = true,
         val roomCode: String = "",
+        val myNodeId: Int = 0,
         val myVirtualIp: String = "—",
         val hostVirtualIp: String = TunnelProtocol.HOST_VIRTUAL_IP,
-        val statusText: String = "VPN desligada. Escolha Criar Servidor ou Entrar na Sala.",
+        val statusText: String = "Rede virtual desligada. Selecione Criar Servidor ou Entrar na Sala.",
         val routeMode: String = "—",
         val pingMs: Long = -1L,
         val connectedPeersCount: Int = 0,
+        val maxAllowedClients: Int = 8,
+        val blockedCount: Int = 0,
+        val members: List<TunnelProtocol.RoomMemberInfo> = emptyList(),
         val txBytes: Long = 0L,
         val rxBytes: Long = 0L
     )
 
-    private class PeerNode(val nodeId: Int, val sessionId: Long) {
+    private class PeerNode(
+        val nodeId: Int,
+        @Volatile var sessionId: Long,
+        @Volatile var accountUid: Long,
+        @Volatile var displayName: String
+    ) {
         val candidateEndpoints = CopyOnWriteArrayList<InetSocketAddress>()
         @Volatile var activeDirectEndpoint: InetSocketAddress? = null
         @Volatile var lastDirectRxAt: Long = 0L
@@ -73,7 +82,16 @@ class GdroidLanVpnService : VpnService() {
         const val ACTION_START_CLIENT = "com.gdroidlan.app.START_CLIENT"
         const val ACTION_STOP = "com.gdroidlan.app.STOP"
         const val ACTION_MANUAL_PING = "com.gdroidlan.app.MANUAL_PING"
+        const val ACTION_UPDATE_CONFIG = "com.gdroidlan.app.UPDATE_CONFIG"
+        const val ACTION_KICK_PEER = "com.gdroidlan.app.KICK_PEER"
+        const val ACTION_CLEAR_BLOCKS = "com.gdroidlan.app.CLEAR_BLOCKS"
+
         const val EXTRA_ROOM_CODE = "room_code"
+        const val EXTRA_PLAYER_NAME = "player_name"
+        const val EXTRA_ACCOUNT_UID = "account_uid"
+        const val EXTRA_MAX_CLIENTS = "max_clients"
+        const val EXTRA_TARGET_NODE_ID = "target_node_id"
+        const val EXTRA_BLOCK_SESSION = "block_session"
 
         private const val CHANNEL_ID = "gdroid_lan_vpn_channel"
         private const val NOTIF_ID = 4101
@@ -84,6 +102,7 @@ class GdroidLanVpnService : VpnService() {
 
         private val listeners = CopyOnWriteArrayList<(TunnelSnapshot) -> Unit>()
         @Volatile var onManualPongToast: ((Long, String) -> Unit)? = null
+        @Volatile var onModerationEventToast: ((String) -> Unit)? = null
 
         fun addListener(l: (TunnelSnapshot) -> Unit) {
             listeners.add(l)
@@ -121,6 +140,12 @@ class GdroidLanVpnService : VpnService() {
     private var topicRoot = ""
     private var cipher: RoomCrypto.SessionCipher? = null
 
+    @Volatile private var myDisplayName = "Jogador"
+    @Volatile private var myAccountUid = 0L
+    @Volatile private var maxClientsAllowed = 8
+    @Volatile private var hostDisplayNameOnClient = "Anfitrião"
+    @Volatile private var remoteRosterCache: List<TunnelProtocol.RoomMemberInfo> = emptyList()
+
     @Volatile private var myNodeId: Int = 0
     private val clientSessionId: Long = SecureRandom().nextLong()
     @Volatile private var myPublicEndpoint: InetSocketAddress? = null
@@ -128,6 +153,8 @@ class GdroidLanVpnService : VpnService() {
 
     private val peersByNode = ConcurrentHashMap<Int, PeerNode>()
     private val sessionToNode = ConcurrentHashMap<Long, Int>()
+    private val blockedSessions = ConcurrentHashMap.newKeySet<Long>()
+    private val blockedAccountUids = ConcurrentHashMap.newKeySet<Long>()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -136,6 +163,7 @@ class GdroidLanVpnService : VpnService() {
                 stopSelf()
                 return START_NOT_STICKY
             }
+
             ACTION_MANUAL_PING -> {
                 if (sessionRunning.get()) {
                     manualPingPending.set(true)
@@ -143,6 +171,44 @@ class GdroidLanVpnService : VpnService() {
                 }
                 return START_STICKY
             }
+
+            ACTION_UPDATE_CONFIG -> {
+                intent.getStringExtra(EXTRA_PLAYER_NAME)?.takeIf { it.isNotBlank() }?.let {
+                    myDisplayName = it.take(24)
+                }
+                val newMax = intent.getIntExtra(EXTRA_MAX_CLIENTS, -1)
+                if (newMax in 1..249) {
+                    maxClientsAllowed = newMax
+                }
+                if (sessionRunning.get()) {
+                    if (isHostRole) {
+                        Thread({ broadcastRosterFromHost() }, "gdroid-cfg-roster").start()
+                    }
+                    refreshSnapshotUi()
+                }
+                return START_STICKY
+            }
+
+            ACTION_KICK_PEER -> {
+                if (sessionRunning.get() && isHostRole) {
+                    val targetNode = intent.getIntExtra(EXTRA_TARGET_NODE_ID, 0)
+                    val blockSession = intent.getBooleanExtra(EXTRA_BLOCK_SESSION, true)
+                    if (targetNode in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID) {
+                        Thread({ kickPeerFromServer(targetNode, blockSession) }, "gdroid-kick").start()
+                    }
+                }
+                return START_STICKY
+            }
+
+            ACTION_CLEAR_BLOCKS -> {
+                blockedSessions.clear()
+                blockedAccountUids.clear()
+                if (sessionRunning.get()) {
+                    refreshSnapshotUi()
+                }
+                return START_STICKY
+            }
+
             ACTION_START_HOST, ACTION_START_CLIENT -> {
                 val rawCode = intent.getStringExtra(EXTRA_ROOM_CODE).orEmpty()
                 val cleanCode = RoomCrypto.normalizeRoomCode(rawCode)
@@ -156,6 +222,11 @@ class GdroidLanVpnService : VpnService() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
+                myDisplayName = intent.getStringExtra(EXTRA_PLAYER_NAME)
+                    ?.trim()?.ifBlank { "Jogador" }?.take(24) ?: "Jogador"
+                myAccountUid = intent.getLongExtra(EXTRA_ACCOUNT_UID, 0L)
+                maxClientsAllowed = intent.getIntExtra(EXTRA_MAX_CLIENTS, 8).coerceIn(1, 249)
+
                 val wantHost = (intent.action == ACTION_START_HOST)
                 startTunnelSession(wantHost, cleanCode)
                 return START_STICKY
@@ -175,7 +246,7 @@ class GdroidLanVpnService : VpnService() {
     }
 
     // =========================================================================
-    // CICLO DE VIDA DA SESSÃO VPN + SINALIZAÇÃO + UDP P2P
+    // INICIALIZAÇÃO DA SESSÃO VPN + SINALIZAÇÃO + UDP P2P
     // =========================================================================
 
     private fun startTunnelSession(asHost: Boolean, roomCode: String) {
@@ -187,6 +258,9 @@ class GdroidLanVpnService : VpnService() {
         cipher = RoomCrypto.SessionCipher(roomCode)
         peersByNode.clear()
         sessionToNode.clear()
+        blockedSessions.clear()
+        blockedAccountUids.clear()
+        remoteRosterCache = emptyList()
         txBytesTotal.set(0L)
         rxBytesTotal.set(0L)
         myPublicEndpoint = null
@@ -204,14 +278,15 @@ class GdroidLanVpnService : VpnService() {
                 phase = StatusPhase.CONNECTING,
                 isHost = asHost,
                 roomCode = roomCode,
+                myNodeId = myNodeId,
                 myVirtualIp = if (asHost) TunnelProtocol.HOST_VIRTUAL_IP else "Negociando...",
-                statusText = if (asHost) "Iniciando Servidor LAN..." else "Procurando sala $roomCode..."
+                maxAllowedClients = maxClientsAllowed,
+                statusText = if (asHost) "Iniciando Servidor LAN..." else "Localizando sala $roomCode..."
             )
         )
 
         Thread({
             try {
-                // 1) Abre socket UDP protegido fora da VPN para P2P direto + STUN
                 val dgram = DatagramSocket(0).apply {
                     reuseAddress = true
                     receiveBufferSize = 256 * 1024
@@ -223,7 +298,6 @@ class GdroidLanVpnService : VpnService() {
                 startUdpReaderLoop(dgram)
                 StunClient.sendBindingRequests(dgram)
 
-                // 2) Se for Servidor (Host), já levanta a interface tun0 10.10.0.1 imediatamente
                 if (asHost) {
                     if (!establishTunInterface(TunnelProtocol.HOST_NODE_ID)) {
                         failAndStop("Permissão de VPN recusada ou indisponível no aparelho.")
@@ -231,7 +305,6 @@ class GdroidLanVpnService : VpnService() {
                     }
                 }
 
-                // 3) Inicia canal criptografado de sinalização e ponte CGNAT (MQTT TLS)
                 val initialTopics = if (asHost) {
                     listOf("$topicRoot/c2h/ctl", "$topicRoot/c2h/pkt")
                 } else {
@@ -245,6 +318,7 @@ class GdroidLanVpnService : VpnService() {
                         if (!sessionRunning.get()) return@MqttLightClient
                         if (isConn) {
                             if (asHost) {
+                                broadcastRosterFromHost()
                                 refreshSnapshotUi()
                             } else if (myNodeId == 0) {
                                 sendClientJoinRequest()
@@ -259,7 +333,6 @@ class GdroidLanVpnService : VpnService() {
                 mqttClient = mqtt
                 mqtt.start(initialTopics)
 
-                // 4) Loop de manutenção: handshake do cliente, hole punching UDP, ping e limpeza
                 startMaintenanceLoop()
             } catch (e: Exception) {
                 failAndStop("Falha ao iniciar rede virtual: ${e.message ?: e.javaClass.simpleName}")
@@ -284,7 +357,84 @@ class GdroidLanVpnService : VpnService() {
     }
 
     // =========================================================================
-    // LEITURA DA INTERFACE TUN0 (PACOTES DO JOGO GDROID -> TÚNEL)
+    // MODERAÇÃO DO SERVIDOR: EXPULSÃO / BLOQUEIO E LISTA DE PARTICIPANTES
+    // =========================================================================
+
+    private fun kickPeerFromServer(targetNode: Int, blockInSession: Boolean) {
+        val peer = peersByNode.remove(targetNode) ?: return
+        sessionToNode.remove(peer.sessionId)
+        if (blockInSession) {
+            blockedSessions.add(peer.sessionId)
+            if (peer.accountUid != 0L) {
+                blockedAccountUids.add(peer.accountUid)
+            }
+        }
+
+        val reason = if (blockInSession) {
+            "Você foi removido e bloqueado desta sessão pelo anfitrião."
+        } else {
+            "Você foi removido da sala pelo anfitrião."
+        }
+
+        val kickEncrypted = cipher?.encrypt(
+            TunnelProtocol.buildKick(peer.sessionId, targetNode, reason)
+        )
+        if (kickEncrypted != null) {
+            repeat(3) {
+                peer.activeDirectEndpoint?.let { ep -> sendUdpRaw(kickEncrypted, ep) }
+                mqttClient?.publish("$topicRoot/h2c/ctl", kickEncrypted)
+            }
+        }
+
+        broadcastRosterFromHost()
+        refreshSnapshotUi()
+        onModerationEventToast?.invoke("${peer.displayName} foi removido da sala.")
+    }
+
+    private fun buildHostMembersList(now: Long = System.currentTimeMillis()): List<TunnelProtocol.RoomMemberInfo> {
+        val list = ArrayList<TunnelProtocol.RoomMemberInfo>()
+        list.add(
+            TunnelProtocol.RoomMemberInfo(
+                nodeId = TunnelProtocol.HOST_NODE_ID,
+                sessionId = 0L,
+                accountUid = myAccountUid,
+                displayName = myDisplayName,
+                virtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
+                isHost = true,
+                pingMs = 0L,
+                routeLabel = "Anfitrião Local"
+            )
+        )
+        val sortedClients = peersByNode.values
+            .filter { it.isAlive(now) }
+            .sortedBy { it.nodeId }
+        for (p in sortedClients) {
+            val route = if (p.isDirectActive(now)) "Direto P2P" else "Ponte CGNAT"
+            list.add(
+                TunnelProtocol.RoomMemberInfo(
+                    nodeId = p.nodeId,
+                    sessionId = p.sessionId,
+                    accountUid = p.accountUid,
+                    displayName = p.displayName,
+                    virtualIp = TunnelProtocol.nodeIp(p.nodeId),
+                    isHost = false,
+                    pingMs = p.lastRttMs,
+                    routeLabel = route
+                )
+            )
+        }
+        return list
+    }
+
+    private fun broadcastRosterFromHost() {
+        if (!isHostRole || !sessionRunning.get()) return
+        val members = buildHostMembersList()
+        val enc = cipher?.encrypt(TunnelProtocol.buildRoster(maxClientsAllowed, members)) ?: return
+        mqttClient?.publish("$topicRoot/h2c/ctl", enc)
+    }
+
+    // =========================================================================
+    // LEITURA DA INTERFACE TUN0 (PACOTES DO JOGO -> TÚNEL)
     // =========================================================================
 
     private fun startTunReaderLoop(pfd: ParcelFileDescriptor) {
@@ -346,7 +496,6 @@ class GdroidLanVpnService : VpnService() {
                     val len = dp.length
                     if (len <= 0) continue
 
-                    // 1) Verifica se é resposta STUN (0x0101)
                     if (buf[0] == 0x01.toByte() && buf[1] == 0x01.toByte()) {
                         val mapped = StunClient.tryParseBindingResponse(buf, len)
                         if (mapped != null && mapped != myPublicEndpoint) {
@@ -356,7 +505,6 @@ class GdroidLanVpnService : VpnService() {
                         continue
                     }
 
-                    // 2) Pacote criptografado P2P do túnel (0x47)
                     val plain = cipher?.decrypt(buf, 0, len) ?: continue
                     val remoteAddr = InetSocketAddress(dp.address, dp.port)
                     handleDecryptedFrame(plain, viaUdpFrom = remoteAddr)
@@ -374,7 +522,7 @@ class GdroidLanVpnService : VpnService() {
     }
 
     // =========================================================================
-    // PROCESSAMENTO UNIFICADO DE FRAMES (CONTROLE, PING E PACOTES IPv4)
+    // PROCESSAMENTO DE FRAMES DO PROTOCOLO
     // =========================================================================
 
     private fun handleDecryptedFrame(plain: ByteArray, viaUdpFrom: InetSocketAddress?) {
@@ -383,38 +531,91 @@ class GdroidLanVpnService : VpnService() {
 
         when (plain[0]) {
             TunnelProtocol.TYPE_JOIN_REQ -> {
-                if (!isHostRole || plain.size < 9) return
-                val reqSessionId = ByteBuffer.wrap(plain, 1, 8).long
-                val assigned = assignNodeForClient(reqSessionId)
-                val peer = peersByNode.getOrPut(assigned) { PeerNode(assigned, reqSessionId) }
+                if (!isHostRole) return
+                val req = TunnelProtocol.parseJoinReq(plain) ?: return
+
+                // Verifica se o cliente foi removido/bloqueado pelo anfitrião nesta sessão
+                if (blockedSessions.contains(req.sessionId) ||
+                    (req.accountUid != 0L && blockedAccountUids.contains(req.accountUid))
+                ) {
+                    val rej = cipher?.encrypt(
+                        TunnelProtocol.buildJoinReject(
+                            req.sessionId,
+                            "Entrada recusada: sua conta foi removida desta sessão pelo anfitrião."
+                        )
+                    ) ?: return
+                    mqttClient?.publish("$topicRoot/h2c/ctl", rej)
+                    return
+                }
+
+                // Verifica se já está conectado (reconexão rápida mantendo mesmo IP) ou se há vaga
+                val existingNode = sessionToNode[req.sessionId]?.takeIf { peersByNode[it]?.isAlive(now) == true }
+                val aliveCount = peersByNode.values.count { it.isAlive(now) }
+                if (existingNode == null && aliveCount >= maxClientsAllowed) {
+                    val rej = cipher?.encrypt(
+                        TunnelProtocol.buildJoinReject(
+                            req.sessionId,
+                            "Sala lotada ($maxClientsAllowed/$maxClientsAllowed convidados conectados)."
+                        )
+                    ) ?: return
+                    mqttClient?.publish("$topicRoot/h2c/ctl", rej)
+                    return
+                }
+
+                val assigned = existingNode ?: assignNodeForClient(req.sessionId)
+                if (assigned < 0) {
+                    val rej = cipher?.encrypt(
+                        TunnelProtocol.buildJoinReject(req.sessionId, "Não há endereços IP livres nesta sala.")
+                    ) ?: return
+                    mqttClient?.publish("$topicRoot/h2c/ctl", rej)
+                    return
+                }
+
+                val isBrandNewJoin = (existingNode == null)
+                val peer = peersByNode.getOrPut(assigned) {
+                    PeerNode(assigned, req.sessionId, req.accountUid, req.displayName)
+                }
+                peer.sessionId = req.sessionId
+                peer.accountUid = req.accountUid
+                peer.displayName = req.displayName
                 peer.lastAnyRxAt = now
                 if (viaUdpFrom != null) {
                     peer.activeDirectEndpoint = viaUdpFrom
                     peer.lastDirectRxAt = now
                 }
 
-                val ack = cipher?.encrypt(TunnelProtocol.buildJoinAck(reqSessionId, assigned)) ?: return
+                val ack = cipher?.encrypt(
+                    TunnelProtocol.buildJoinAck(req.sessionId, assigned, maxClientsAllowed, myDisplayName)
+                ) ?: return
                 mqttClient?.publish("$topicRoot/h2c/ctl", ack)
                 broadcastMyCandidates()
+                broadcastRosterFromHost()
                 refreshSnapshotUi()
+
+                if (isBrandNewJoin) {
+                    onModerationEventToast?.invoke("${req.displayName} entrou na sala (${TunnelProtocol.nodeIp(assigned)}).")
+                }
             }
 
             TunnelProtocol.TYPE_JOIN_ACK -> {
-                if (isHostRole || plain.size < 10) return
-                val ackSessionId = ByteBuffer.wrap(plain, 1, 8).long
-                if (ackSessionId != clientSessionId) return
-                val assigned = plain[9].toInt() and 0xFF
-                if (assigned !in 2..9) return
+                if (isHostRole) return
+                val ack = TunnelProtocol.parseJoinAck(plain) ?: return
+                if (ack.sessionId != clientSessionId) return
+                if (ack.assignedNodeId !in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID) return
+
+                maxClientsAllowed = ack.maxClients
+                hostDisplayNameOnClient = ack.hostName
 
                 val hostPeer = peersByNode.getOrPut(TunnelProtocol.HOST_NODE_ID) {
-                    PeerNode(TunnelProtocol.HOST_NODE_ID, 0L)
+                    PeerNode(TunnelProtocol.HOST_NODE_ID, 0L, 0L, ack.hostName)
                 }
+                hostPeer.displayName = ack.hostName
                 hostPeer.lastAnyRxAt = now
 
                 if (myNodeId == 0) {
-                    myNodeId = assigned
-                    mqttClient?.subscribe("$topicRoot/h2c/pkt/$assigned")
-                    if (!establishTunInterface(assigned)) {
+                    myNodeId = ack.assignedNodeId
+                    mqttClient?.subscribe("$topicRoot/h2c/pkt/${ack.assignedNodeId}")
+                    if (!establishTunInterface(ack.assignedNodeId)) {
                         failAndStop("Não foi possível criar a interface VPN no Android.")
                         return
                     }
@@ -424,13 +625,44 @@ class GdroidLanVpnService : VpnService() {
                 refreshSnapshotUi()
             }
 
+            TunnelProtocol.TYPE_JOIN_REJECT -> {
+                if (isHostRole) return
+                val rej = TunnelProtocol.parseRejectOrKick(plain) ?: return
+                if (rej.sessionId == clientSessionId) {
+                    failAndStop(rej.reason)
+                }
+            }
+
+            TunnelProtocol.TYPE_KICK -> {
+                if (isHostRole) return
+                val kick = TunnelProtocol.parseRejectOrKick(plain) ?: return
+                if (kick.sessionId == clientSessionId || (myNodeId > 0 && kick.targetNodeId == myNodeId)) {
+                    failAndStop(kick.reason)
+                }
+            }
+
+            TunnelProtocol.TYPE_ROSTER -> {
+                if (isHostRole) return
+                val roster = TunnelProtocol.parseRoster(plain) ?: return
+                maxClientsAllowed = roster.maxClients
+                remoteRosterCache = roster.members
+                peersByNode[TunnelProtocol.HOST_NODE_ID]?.lastAnyRxAt = now
+                refreshSnapshotUi()
+            }
+
             TunnelProtocol.TYPE_CANDIDATES -> {
                 if (plain.size < 3) return
                 val senderNode = plain[1].toInt() and 0xFF
                 if (senderNode == myNodeId || senderNode <= 0) return
                 if (!isHostRole && senderNode != TunnelProtocol.HOST_NODE_ID) return
 
-                val peer = peersByNode.getOrPut(senderNode) { PeerNode(senderNode, 0L) }
+                val peer = if (isHostRole) {
+                    peersByNode[senderNode] ?: return
+                } else {
+                    peersByNode.getOrPut(senderNode) {
+                        PeerNode(senderNode, 0L, 0L, hostDisplayNameOnClient)
+                    }
+                }
                 peer.lastAnyRxAt = now
                 val endpoints = TunnelProtocol.parseCandidatesEndpoints(plain.copyOfRange(2, plain.size))
                 for (ep in endpoints) {
@@ -450,7 +682,13 @@ class GdroidLanVpnService : VpnService() {
                 if (targetNode != myNodeId && targetNode != TunnelProtocol.BROADCAST_NODE_ID) return
                 val sentAt = ByteBuffer.wrap(plain, 3, 8).long
 
-                val peer = peersByNode.getOrPut(senderNode) { PeerNode(senderNode, 0L) }
+                val peer = if (isHostRole) {
+                    peersByNode[senderNode] ?: return
+                } else {
+                    peersByNode.getOrPut(senderNode) {
+                        PeerNode(senderNode, 0L, 0L, hostDisplayNameOnClient)
+                    }
+                }
                 peer.lastAnyRxAt = now
                 if (viaUdpFrom != null) {
                     peer.activeDirectEndpoint = viaUdpFrom
@@ -476,7 +714,13 @@ class GdroidLanVpnService : VpnService() {
                 val sentAt = ByteBuffer.wrap(plain, 3, 8).long
                 val rtt = (now - sentAt).coerceIn(1L, 9_999L)
 
-                val peer = peersByNode.getOrPut(senderNode) { PeerNode(senderNode, 0L) }
+                val peer = if (isHostRole) {
+                    peersByNode[senderNode] ?: return
+                } else {
+                    peersByNode.getOrPut(senderNode) {
+                        PeerNode(senderNode, 0L, 0L, hostDisplayNameOnClient)
+                    }
+                }
                 peer.lastAnyRxAt = now
                 peer.lastRttMs = rtt
                 if (viaUdpFrom != null) {
@@ -497,7 +741,14 @@ class GdroidLanVpnService : VpnService() {
                 val dstNode = plain[2].toInt() and 0xFF
                 if (senderNode == myNodeId) return
 
-                val peer = peersByNode.getOrPut(senderNode) { PeerNode(senderNode, 0L) }
+                // No servidor, somente membros autenticados e ativos na sala podem trafegar pacotes IPv4
+                val peer = if (isHostRole) {
+                    peersByNode[senderNode] ?: return
+                } else {
+                    peersByNode.getOrPut(senderNode) {
+                        PeerNode(senderNode, 0L, 0L, hostDisplayNameOnClient)
+                    }
+                }
                 peer.lastAnyRxAt = now
                 if (viaUdpFrom != null) {
                     peer.activeDirectEndpoint = viaUdpFrom
@@ -517,9 +768,11 @@ class GdroidLanVpnService : VpnService() {
                                 .filter { it != senderNode }
                                 .forEach { otherId -> sendToSpecificClient(otherId, reEnc, isGamePacket = true) }
                         }
-                        dstNode in 2..9 -> {
-                            val reEnc = cipher?.encrypt(plain) ?: return
-                            sendToSpecificClient(dstNode, reEnc, isGamePacket = true)
+                        dstNode in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID -> {
+                            if (peersByNode.containsKey(dstNode)) {
+                                val reEnc = cipher?.encrypt(plain) ?: return
+                                sendToSpecificClient(dstNode, reEnc, isGamePacket = true)
+                            }
                         }
                     }
                 } else {
@@ -533,10 +786,14 @@ class GdroidLanVpnService : VpnService() {
                 if (plain.size < 2) return
                 val senderNode = plain[1].toInt() and 0xFF
                 if (isHostRole) {
-                    peersByNode.remove(senderNode)
-                    refreshSnapshotUi()
+                    val removed = peersByNode.remove(senderNode)
+                    if (removed != null) {
+                        sessionToNode.remove(removed.sessionId)
+                        broadcastRosterFromHost()
+                        refreshSnapshotUi()
+                    }
                 } else if (senderNode == TunnelProtocol.HOST_NODE_ID) {
-                    failAndStop("O servidor encerrou a sala $activeRoomCode.")
+                    failAndStop("O anfitrião encerrou a sala $activeRoomCode.")
                 }
             }
         }
@@ -549,14 +806,14 @@ class GdroidLanVpnService : VpnService() {
     private fun assignNodeForClient(sessionId: Long): Int {
         sessionToNode[sessionId]?.let { return it }
         val now = System.currentTimeMillis()
-        for (candidate in 2..9) {
+        for (candidate in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID) {
             val existing = peersByNode[candidate]
             if (existing == null || !existing.isAlive(now)) {
                 sessionToNode[sessionId] = candidate
                 return candidate
             }
         }
-        return 2
+        return -1
     }
 
     private fun sendUdpRaw(encrypted: ByteArray, target: InetSocketAddress): Boolean {
@@ -571,9 +828,9 @@ class GdroidLanVpnService : VpnService() {
     }
 
     private fun sendToSpecificClient(clientNode: Int, encrypted: ByteArray, isGamePacket: Boolean) {
-        val peer = peersByNode[clientNode]
-        val direct = peer?.activeDirectEndpoint
-        if (peer != null && direct != null && peer.isDirectActive() && sendUdpRaw(encrypted, direct)) {
+        val peer = peersByNode[clientNode] ?: return
+        val direct = peer.activeDirectEndpoint
+        if (direct != null && peer.isDirectActive() && sendUdpRaw(encrypted, direct)) {
             return
         }
         val topic = if (isGamePacket) "$topicRoot/h2c/pkt/$clientNode" else "$topicRoot/h2c/ctl"
@@ -609,7 +866,9 @@ class GdroidLanVpnService : VpnService() {
     }
 
     private fun sendClientJoinRequest() {
-        val enc = cipher?.encrypt(TunnelProtocol.buildJoinReq(clientSessionId)) ?: return
+        val enc = cipher?.encrypt(
+            TunnelProtocol.buildJoinReq(clientSessionId, myAccountUid, myDisplayName)
+        ) ?: return
         mqttClient?.publish("$topicRoot/c2h/ctl", enc)
     }
 
@@ -655,7 +914,7 @@ class GdroidLanVpnService : VpnService() {
     }
 
     // =========================================================================
-    // LOOP DE MANUTENÇÃO, PING AUTOMÁTICO E ATUALIZAÇÃO DE UI
+    // LOOP DE MANUTENÇÃO, PING AUTOMÁTICO E SINCRONIZAÇÃO DE ROSTER
     // =========================================================================
 
     private fun startMaintenanceLoop() {
@@ -672,27 +931,35 @@ class GdroidLanVpnService : VpnService() {
                 tick++
                 val now = System.currentTimeMillis()
 
-                // Cliente aguardando JOIN_ACK do servidor
                 if (!isHostRole && myNodeId == 0) {
                     if (now - startedAt > 20_000L) {
-                        failAndStop("Sala '$activeRoomCode' não encontrada. Confirme se seu amigo ligou o Servidor!")
+                        failAndStop("Sala '$activeRoomCode' não localizada. Verifique se o anfitrião já iniciou o Servidor.")
                         break
                     }
                     sendClientJoinRequest()
                     continue
                 }
 
-                // Reenvia STUN periodicamente caso a porta NAT mude
                 if (tick % 8 == 1) {
                     udpSocket?.let { StunClient.sendBindingRequests(it) }
                 }
 
-                // Remove clientes inativos no servidor
                 if (isHostRole) {
-                    peersByNode.entries.removeIf { !it.value.isAlive(now) }
+                    var removedAny = false
+                    val it = peersByNode.entries.iterator()
+                    while (it.hasNext()) {
+                        val e = it.next()
+                        if (!e.value.isAlive(now)) {
+                            sessionToNode.remove(e.value.sessionId)
+                            it.remove()
+                            removedAny = true
+                        }
+                    }
+                    if (removedAny || tick % 2 == 0) {
+                        broadcastRosterFromHost()
+                    }
                 }
 
-                // Envia candidatos e pings periódicos para manter NAT aberto e medir latência
                 if (tick % 3 == 0) {
                     broadcastMyCandidates()
                 }
@@ -714,16 +981,18 @@ class GdroidLanVpnService : VpnService() {
         val phase: StatusPhase
         val detail: String
         val routeLabel: String
+        val membersList: List<TunnelProtocol.RoomMemberInfo>
 
         if (isHostRole) {
+            membersList = buildHostMembersList(now)
             if (alivePeers.isNotEmpty()) {
                 phase = StatusPhase.ONLINE
                 routeLabel = if (anyDirect) "Direto P2P (UDP)" else "Ponte CGNAT (TLS)"
-                detail = "Amigo conectado! Abra o GDroid — ele deve entrar no IP 10.10.0.1."
+                detail = "Servidor ativo com ${alivePeers.size} participante(s). No GDroid, todos usam 10.10.0.1."
             } else if (mqttOk) {
                 phase = StatusPhase.WAITING_FRIEND
-                routeLabel = "Pronto p/ receber"
-                detail = "Servidor ativo! Mande o código $activeRoomCode para seu amigo conectar."
+                routeLabel = "Pronto"
+                detail = "Servidor pronto. Compartilhe o código $activeRoomCode para entrarem na sala."
             } else {
                 phase = StatusPhase.CONNECTING
                 routeLabel = "Conectando..."
@@ -733,12 +1002,45 @@ class GdroidLanVpnService : VpnService() {
             if (myNodeId > 0 && alivePeers.isNotEmpty()) {
                 phase = StatusPhase.ONLINE
                 routeLabel = if (anyDirect) "Direto P2P (UDP)" else "Ponte CGNAT (TLS)"
-                detail = "Conectado ao Servidor! Abra o GDroid e entre no IP 10.10.0.1."
+                detail = "Conectado ao servidor de $hostDisplayNameOnClient. No GDroid, conecte em 10.10.0.1."
+                membersList = if (remoteRosterCache.isNotEmpty()) {
+                    remoteRosterCache
+                } else {
+                    listOf(
+                        TunnelProtocol.RoomMemberInfo(
+                            nodeId = TunnelProtocol.HOST_NODE_ID,
+                            sessionId = 0L,
+                            accountUid = 0L,
+                            displayName = hostDisplayNameOnClient,
+                            virtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
+                            isHost = true,
+                            pingMs = bestPing,
+                            routeLabel = routeLabel
+                        ),
+                        TunnelProtocol.RoomMemberInfo(
+                            nodeId = myNodeId,
+                            sessionId = clientSessionId,
+                            accountUid = myAccountUid,
+                            displayName = myDisplayName,
+                            virtualIp = myIp,
+                            isHost = false,
+                            pingMs = 0L,
+                            routeLabel = "Este aparelho"
+                        )
+                    )
+                }
             } else {
                 phase = StatusPhase.CONNECTING
-                routeLabel = "Buscando sala..."
-                detail = "Procurando servidor da sala $activeRoomCode..."
+                routeLabel = "Localizando..."
+                detail = "Conectando ao servidor da sala $activeRoomCode..."
+                membersList = emptyList()
             }
+        }
+
+        val guestCount = if (isHostRole) {
+            alivePeers.size
+        } else {
+            membersList.count { !it.isHost }.coerceAtLeast(if (phase == StatusPhase.ONLINE) 1 else 0)
         }
 
         publishState(
@@ -746,12 +1048,16 @@ class GdroidLanVpnService : VpnService() {
                 phase = phase,
                 isHost = isHostRole,
                 roomCode = activeRoomCode,
+                myNodeId = myNodeId,
                 myVirtualIp = myIp,
                 hostVirtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
                 statusText = detail,
                 routeMode = routeLabel,
                 pingMs = bestPing,
-                connectedPeersCount = if (isHostRole) alivePeers.size else if (phase == StatusPhase.ONLINE) 1 else 0,
+                connectedPeersCount = guestCount,
+                maxAllowedClients = maxClientsAllowed,
+                blockedCount = blockedSessions.size,
+                members = membersList,
                 txBytes = txBytesTotal.get(),
                 rxBytes = rxBytesTotal.get()
             )
@@ -765,6 +1071,7 @@ class GdroidLanVpnService : VpnService() {
                 phase = StatusPhase.ERROR,
                 isHost = isHostRole,
                 roomCode = activeRoomCode,
+                maxAllowedClients = maxClientsAllowed,
                 statusText = errorMsg
             )
         )
@@ -808,7 +1115,7 @@ class GdroidLanVpnService : VpnService() {
         } catch (_: Exception) { }
 
         if (userRequested) {
-            publishState(TunnelSnapshot())
+            publishState(TunnelSnapshot(maxAllowedClients = maxClientsAllowed))
         }
     }
 
@@ -824,7 +1131,7 @@ class GdroidLanVpnService : VpnService() {
                 "GDroid LAN VPN",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Mantém a rede virtual LAN ativa durante o jogo"
+                description = "Mantém a rede virtual LAN ativa durante a partida"
             }
             nm.createNotificationChannel(channel)
         }

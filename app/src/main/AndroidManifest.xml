@@ -17,15 +17,20 @@
         android:theme="@style/Theme.GDroidLAN">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".AuthActivity"
             android:exported="true"
-            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".vpn.GdroidLanVpnService"

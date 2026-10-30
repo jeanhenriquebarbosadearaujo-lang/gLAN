@@ -5,39 +5,34 @@
 <h1 align="center">GDroid LAN — Rede Virtual P2P para Multiplayer</h1>
 
 <p align="center">
-  <b>Jogue GDroid e qualquer jogo Wi-Fi/LAN à distância com seus amigos — sem cadastro, 100% gratuito e compatível com CGNAT / 4G / 5G.</b>
+  <b>Conecte salas multiplayer do GDroid e jogos LAN à distância com criptografia ponta a ponta, controle de capacidade e gerenciamento de participantes em tempo real.</b>
 </p>
 
 ---
 
-## Como funciona
+## Principais Recursos (v2.0)
 
-O **GDroid LAN** cria uma interface VPN local (`10.10.0.0/24`) em **Split-Tunnel**:
-- **Somente** os pacotes da rede virtual `10.10.0.x` passam pelo túnel criptografado (`AES-128-GCM`).
-- Todo o restante da sua internet (WhatsApp, Discord, navegador, etc.) continua saindo direto na velocidade normal do seu Wi-Fi ou 4G/5G.
-- **Roteamento Híbrido Automático:** tenta conexão **Direta P2P via UDP Hole-Punching (STUN RFC 5389)** para menor ping e usa **Ponte CGNAT TLS** automaticamente quando a operadora bloqueia portas de entrada.
-- Qualquer um dos dois celulares pode ser **Servidor (Host)** ou **Cliente (Amigo)** usando o mesmo APK!
+- **Sistema de Conta e Identificação:** cadastro e login de conta com Nome de Exibição visível na sala e identificador único por usuário.
+- **Controle de Capacidade da Sala:** o anfitrião define exatamente quantos convidados podem entrar na partida (de 1 até 50 convidados por sala).
+- **Lista de Participantes em Tempo Real:** visualização ao vivo de todos os jogadores conectados na sala com nome, endereço IP virtual, latência (`ms`) e rota ativa.
+- **Moderação pelo Anfitrião:** remoção imediata de qualquer participante da sala (com opção de apenas desconectar ou bloquear na sessão atual).
+- **Split-Tunnel (`10.10.0.0/24`):** somente o tráfego da rede virtual `10.10.0.x` passa pelo túnel criptografado (`AES-128-GCM`), preservando a velocidade normal da internet do aparelho.
+- **Roteamento Híbrido Anti-CGNAT:** tentativa automática de conexão Direta P2P via UDP Hole-Punching (STUN RFC 5389) com contingência transparente via Ponte TLS.
 
 ---
 
-## Passo a Passo para Jogar no GDroid
+## Instruções de Uso
 
-### 1. Quem vai hospedar a partida (`Servidor / Host`)
-1. Abra o **GDroid LAN** e deixe na aba **👑 Criar Servidor**.
-2. Toque em **⚡ LIGAR SERVIDOR LAN** (aceite a permissão padrão de VPN do Android na primeira vez).
-3. Envie o **Código da Sala** (ex.: `K7P9M2`) para seu amigo pelo botão **Enviar p/ Amigo**.
-4. Abra o **GDroid** e inicie o servidor multiplayer normalmente. Seu IP na rede virtual é sempre **`10.10.0.1`**.
+### 1. Anfitrião da Partida (`Criar Servidor`)
+1. Crie sua conta ou acesse com seu usuário e senha.
+2. Na aba **Criar Servidor**, ajuste o **Limite de Pessoas na Sala** e toque em **INICIAR SERVIDOR LAN**.
+3. Compartilhe o **Código da Sala** com os participantes.
+4. No **GDroid**, inicie o servidor normalmente. Seu IP virtual fixo é sempre **`10.10.0.1`**.
 
-### 2. Quem vai entrar na partida (`Cliente / Amigo`)
-1. Abra o **GDroid LAN** e toque na aba **🎮 Entrar na Sala**.
-2. Cole ou digite o **Código da Sala** recebido e toque em **🚀 CONECTAR NA SALA**.
-3. Assim que aparecer **CONECTADO** (você receberá o IP `10.10.0.2`), abra o **GDroid**, vá em conectar por IP e digite:
+### 2. Convidados (`Entrar na Sala`)
+1. Crie sua conta ou acesse com seu usuário e senha.
+2. Na aba **Entrar na Sala**, informe o **Código da Sala** e toque em **CONECTAR NA SALA**.
+3. Após exibir **CONECTADO**, abra o **GDroid** e conecte no endereço IP:
    ```text
    10.10.0.1
    ```
-
----
-
-## Compilação Automática (GitHub Actions)
-
-Todo push na branch `main` compila e assina automaticamente o APK de release (`GDroid-LAN-v1.0.apk` com assinatura `V1 + V2 + V3`) e publica em **GitHub Releases**.
