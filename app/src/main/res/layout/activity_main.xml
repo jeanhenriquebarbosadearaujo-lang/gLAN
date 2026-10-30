@@ -44,7 +44,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Rede LAN Virtual P2P • v2.0"
+                    android:text="Rede LAN Virtual P2P • v2.1"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
             </LinearLayout>
@@ -108,32 +108,23 @@
                         android:id="@+id/txtUsuarioConta"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@usuario"
+                        android:text="Conta única ativa"
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp" />
                 </LinearLayout>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnEditarNome"
-                    style="@style/Widget.Material3.Button.TextButton"
+                <TextView
+                    android:id="@+id/txtTagConta"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:minWidth="0dp"
-                    android:paddingHorizontal="8dp"
-                    android:text="Editar Nome"
+                    android:layout_height="wrap_content"
+                    android:background="@color/surface_elevated"
+                    android:fontFamily="monospace"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp"
+                    android:text="ID #000000"
                     android:textColor="@color/neon_cyan"
-                    android:textSize="12sp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSairConta"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:minWidth="0dp"
-                    android:paddingHorizontal="8dp"
-                    android:text="Sair"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

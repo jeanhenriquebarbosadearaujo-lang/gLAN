@@ -12,10 +12,7 @@ import android.graphics.Color
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
-import android.text.InputFilter
 import android.view.View
-import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -94,7 +91,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         configurarAbasModo()
-        configurarBotoesConta()
         configurarSeletorCapacidade()
         configurarBotoesPrincipais()
 
@@ -128,69 +124,8 @@ class MainActivity : AppCompatActivity() {
     private fun atualizarCabecalhoConta() {
         val c = contaAtiva ?: return
         b.txtNomeConta.text = c.displayName
-        b.txtUsuarioConta.text = "@${c.username}"
-    }
-
-    private fun configurarBotoesConta() {
-        b.btnEditarNome.setOnClickListener {
-            val atual = contaAtiva?.displayName.orEmpty()
-            val container = FrameLayout(this)
-            val padH = (20 * resources.displayMetrics.density).toInt()
-            val padV = (8 * resources.displayMetrics.density).toInt()
-            val input = EditText(this).apply {
-                setText(atual)
-                setSelection(atual.length)
-                hint = "Nome de exibição"
-                setTextColor(Color.WHITE)
-                setHintTextColor(Color.parseColor("#94A3B8"))
-                filters = arrayOf(InputFilter.LengthFilter(24))
-            }
-            val lp = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(padH, padV, padH, 0)
-            }
-            container.addView(input, lp)
-
-            MaterialAlertDialogBuilder(this)
-                .setTitle("Alterar Nome de Exibição")
-                .setMessage("Este nome será exibido na lista de participantes da sala.")
-                .setView(container)
-                .setPositiveButton("Salvar") { _, _ ->
-                    val atualizado = AccountManagerStore.updateDisplayName(
-                        this,
-                        input.text?.toString().orEmpty()
-                    )
-                    if (atualizado == null) {
-                        toast("Informe pelo menos 2 caracteres para o nome.")
-                    } else {
-                        contaAtiva = atualizado
-                        atualizarCabecalhoConta()
-                        sincronizarConfiguracaoEmExecucao()
-                        toast("Nome atualizado para ${atualizado.displayName}.")
-                    }
-                }
-                .setNegativeButton("Cancelar", null)
-                .show()
-        }
-
-        b.btnSairConta.setOnClickListener {
-            MaterialAlertDialogBuilder(this)
-                .setTitle("Sair da Conta")
-                .setMessage("Deseja encerrar sua sessão atual neste aparelho?")
-                .setPositiveButton("Sair") { _, _ ->
-                    val stop = Intent(this, GdroidLanVpnService::class.java).apply {
-                        action = GdroidLanVpnService.ACTION_STOP
-                    }
-                    startService(stop)
-                    AccountManagerStore.logout(this)
-                    startActivity(Intent(this, AuthActivity::class.java))
-                    finish()
-                }
-                .setNegativeButton("Cancelar", null)
-                .show()
-        }
+        b.txtUsuarioConta.text = "Conta vinculada a esta instalação"
+        b.txtTagConta.text = "ID #${c.accountTag}"
     }
 
     private fun configurarSeletorCapacidade() {
@@ -215,7 +150,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun definirLimiteConvidados(novoLimite: Int) {
         limiteConvidados = novoLimite.coerceIn(1, 50)
-        prefs.edit().putString("max_clients_set", "1").putInt("max_clients", limiteConvidados).apply()
+        prefs.edit().putInt("max_clients", limiteConvidados).apply()
         renderizarSeletorCapacidade()
         sincronizarConfiguracaoEmExecucao()
     }

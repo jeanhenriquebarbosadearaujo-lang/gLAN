@@ -9,14 +9,13 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_horizontal"
+        android:gravity="center"
         android:orientation="vertical"
-        android:padding="22dp">
+        android:padding="24dp">
 
         <ImageView
-            android:layout_width="84dp"
-            android:layout_height="84dp"
-            android:layout_marginTop="20dp"
+            android:layout_width="86dp"
+            android:layout_height="86dp"
             android:contentDescription="@string/app_name"
             android:src="@drawable/img_hero_logo" />
 
@@ -34,14 +33,14 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:gravity="center"
-            android:text="Identificação de Conta para Salas Multiplayer"
+            android:text="Identificação de Conta da Instalação"
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
+            android:layout_marginTop="24dp"
             app:cardBackgroundColor="@color/surface_card"
             app:cardCornerRadius="18dp"
             app:cardElevation="0dp"
@@ -52,94 +51,41 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="18dp">
-
-                <com.google.android.material.button.MaterialButtonToggleGroup
-                    android:id="@+id/grupoAbaConta"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:selectionRequired="true"
-                    app:singleSelection="true">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnAbaCriarConta"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="46dp"
-                        android:layout_weight="1"
-                        android:text="Criar Conta"
-                        android:textColor="@color/text_primary"
-                        app:strokeColor="@color/stroke_subtle" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnAbaEntrarConta"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="46dp"
-                        android:layout_weight="1"
-                        android:text="Entrar"
-                        android:textColor="@color/text_primary"
-                        app:strokeColor="@color/stroke_subtle" />
-                </com.google.android.material.button.MaterialButtonToggleGroup>
+                android:padding="20dp">
 
                 <TextView
-                    android:id="@+id/txtDescricaoConta"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="CRIAR IDENTIFICAÇÃO"
+                    android:textColor="@color/neon_emerald"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:lineSpacingExtra="2dp"
-                    android:text="Crie sua conta e escolha o nome que aparecerá para o anfitrião e participantes das salas."
+                    android:layout_marginTop="8dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="Informe o nome que aparecerá para os participantes nas salas. Esta conta é única para esta instalação e permanece salva enquanto o aplicativo não for desinstalado."
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
 
-                <!-- NOME DE EXIBIÇÃO NA SALA -->
                 <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/layoutNomeExibicao"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:hint="Nome de Exibição na Sala (ex.: Jean)">
+                    android:layout_marginTop="16dp"
+                    android:hint="Seu Nome na Sala">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/edtNomeExibicao"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:imeOptions="actionDone"
                         android:inputType="textPersonName|textCapWords"
                         android:maxLength="24"
-                        android:textColor="@color/text_primary" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <!-- USUÁRIO -->
-                <com.google.android.material.textfield.TextInputLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:hint="Nome de Usuário (ex.: jean_lan)">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/edtUsuario"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="textNoSuggestions"
-                        android:maxLength="20"
-                        android:textColor="@color/text_primary" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <!-- SENHA -->
-                <com.google.android.material.textfield.TextInputLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:hint="Senha (mínimo 4 caracteres)"
-                    app:endIconMode="password_toggle">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/edtSenha"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="textPassword"
-                        android:maxLength="32"
-                        android:textColor="@color/text_primary" />
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <TextView
@@ -155,8 +101,8 @@
                     android:id="@+id/btnConfirmarConta"
                     android:layout_width="match_parent"
                     android:layout_height="54dp"
-                    android:layout_marginTop="16dp"
-                    android:text="CRIAR CONTA E CONTINUAR"
+                    android:layout_marginTop="18dp"
+                    android:text="CRIAR CONTA E ENTRAR"
                     android:textColor="#04140B"
                     android:textSize="14sp"
                     android:textStyle="bold"
@@ -171,7 +117,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:gravity="center"
-            android:text="Acesso protegido localmente • Identificador único por conta"
+            android:text="Conta única vinculada ao aparelho • Sem senha"
             android:textColor="@color/text_secondary"
             android:textSize="11sp" />
 

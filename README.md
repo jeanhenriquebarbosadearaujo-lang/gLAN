@@ -10,9 +10,9 @@
 
 ---
 
-## Principais Recursos (v2.0)
+## Principais Recursos (v2.1)
 
-- **Sistema de Conta e Identificação:** cadastro e login de conta com Nome de Exibição visível na sala e identificador único por usuário.
+- **Conta Única por Instalação (Apenas Nome):** ao abrir pela primeira vez, o jogador informa somente o Nome (sem senha e sem login repetido). A conta é única por instalação e fica salva automaticamente apenas enquanto o aplicativo permanecer instalado (`allowBackup="false"`).
 - **Controle de Capacidade da Sala:** o anfitrião define exatamente quantos convidados podem entrar na partida (de 1 até 50 convidados por sala).
 - **Lista de Participantes em Tempo Real:** visualização ao vivo de todos os jogadores conectados na sala com nome, endereço IP virtual, latência (`ms`) e rota ativa.
 - **Moderação pelo Anfitrião:** remoção imediata de qualquer participante da sala (com opção de apenas desconectar ou bloquear na sessão atual).
@@ -24,13 +24,13 @@
 ## Instruções de Uso
 
 ### 1. Anfitrião da Partida (`Criar Servidor`)
-1. Crie sua conta ou acesse com seu usuário e senha.
+1. Na primeira abertura, informe seu Nome para criar a identificação única da instalação.
 2. Na aba **Criar Servidor**, ajuste o **Limite de Pessoas na Sala** e toque em **INICIAR SERVIDOR LAN**.
 3. Compartilhe o **Código da Sala** com os participantes.
 4. No **GDroid**, inicie o servidor normalmente. Seu IP virtual fixo é sempre **`10.10.0.1`**.
 
 ### 2. Convidados (`Entrar na Sala`)
-1. Crie sua conta ou acesse com seu usuário e senha.
+1. Na primeira abertura, informe seu Nome.
 2. Na aba **Entrar na Sala**, informe o **Código da Sala** e toque em **CONECTAR NA SALA**.
 3. Após exibir **CONECTADO**, abra o **GDroid** e conecte no endereço IP:
    ```text
