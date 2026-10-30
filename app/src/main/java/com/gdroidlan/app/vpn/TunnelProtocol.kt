@@ -27,6 +27,12 @@ object TunnelProtocol {
     const val TYPE_JOIN_REJECT: Byte = 0x08
     const val TYPE_KICK: Byte = 0x09
     const val TYPE_ROSTER: Byte = 0x0A
+    const val TYPE_PROBE_REQ: Byte = 0x0B
+    const val TYPE_PROBE_ACK: Byte = 0x0C
+
+    const val PROBE_STATUS_OK = 0
+    const val PROBE_STATUS_FULL = 1
+    const val PROBE_STATUS_BLOCKED = 2
 
     data class RoomMemberInfo(
         val nodeId: Int,
@@ -61,6 +67,18 @@ object TunnelProtocol {
     data class RosterPayload(
         val maxPlayers: Int,
         val members: List<RoomMemberInfo>
+    )
+
+    data class ProbeReqData(
+        val probeId: Long,
+        val accountUid: Long
+    )
+
+    data class ProbeAckData(
+        val probeId: Long,
+        val status: Int,
+        val curPlayers: Int,
+        val maxPlayers: Int
     )
 
     fun nodeIp(nodeId: Int): String = "10.10.0.${nodeId and 0xFF}"
@@ -278,6 +296,42 @@ object TunnelProtocol {
 
     fun buildBye(senderNodeId: Int): ByteArray =
         byteArrayOf(TYPE_BYE, (senderNodeId and 0xFF).toByte())
+
+    fun buildProbeReq(probeId: Long, accountUid: Long): ByteArray {
+        return ByteBuffer.allocate(17)
+            .put(TYPE_PROBE_REQ)
+            .putLong(probeId)
+            .putLong(accountUid)
+            .array()
+    }
+
+    fun parseProbeReq(plain: ByteArray): ProbeReqData? {
+        if (plain.size < 17 || plain[0] != TYPE_PROBE_REQ) return null
+        val buf = ByteBuffer.wrap(plain, 1, 16)
+        return ProbeReqData(
+            probeId = buf.long,
+            accountUid = buf.long
+        )
+    }
+
+    fun buildProbeAck(probeId: Long, status: Int, curPlayers: Int, maxPlayers: Int): ByteArray {
+        return ByteBuffer.allocate(12)
+            .put(TYPE_PROBE_ACK)
+            .putLong(probeId)
+            .put((status and 0xFF).toByte())
+            .put((curPlayers and 0xFF).toByte())
+            .put((maxPlayers and 0xFF).toByte())
+            .array()
+    }
+
+    fun parseProbeAck(plain: ByteArray): ProbeAckData? {
+        if (plain.size < 12 || plain[0] != TYPE_PROBE_ACK) return null
+        val probeId = ByteBuffer.wrap(plain, 1, 8).long
+        val status = plain[9].toInt() and 0xFF
+        val cur = plain[10].toInt() and 0xFF
+        val max = plain[11].toInt() and 0xFF
+        return ProbeAckData(probeId, status, cur, max)
+    }
 
     fun inspectOutgoingIpv4Target(pkt: ByteArray, len: Int): Int {
         if (len < 20) return -1

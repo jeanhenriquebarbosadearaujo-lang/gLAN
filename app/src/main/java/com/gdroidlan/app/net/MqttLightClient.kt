@@ -84,6 +84,24 @@ class MqttLightClient(
         }
     }
 
+    fun forceResubscribe(topic: String) {
+        subscribedTopics.add(topic)
+        if (connected.get()) {
+            try {
+                sendSubscribe(listOf(topic))
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun unsubscribe(topic: String) {
+        val removed = subscribedTopics.remove(topic)
+        if (removed && connected.get()) {
+            try {
+                sendUnsubscribe(listOf(topic))
+            } catch (_: Exception) { }
+        }
+    }
+
     fun publish(topic: String, payload: ByteArray): Boolean {
         if (!connected.get()) return false
         return try {
@@ -242,6 +260,32 @@ class MqttLightClient(
         val bodyBytes = body.toByteArray()
         val pkt = ByteArrayOutputStream(5 + bodyBytes.size)
         pkt.write(0x82)
+        writeVarLen(pkt, bodyBytes.size)
+        pkt.write(bodyBytes)
+        val raw = pkt.toByteArray()
+
+        synchronized(writeLock) {
+            val out = activeOut ?: return
+            out.write(raw)
+            out.flush()
+        }
+    }
+
+    private fun sendUnsubscribe(topics: List<String>) {
+        if (topics.isEmpty()) return
+        val pid = packetIdGen.getAndUpdate { if (it >= 65000) 1 else it + 1 }
+        val body = ByteArrayOutputStream()
+        body.write((pid ushr 8) and 0xFF)
+        body.write(pid and 0xFF)
+        for (t in topics) {
+            val tb = t.toByteArray(Charsets.UTF_8)
+            body.write((tb.size ushr 8) and 0xFF)
+            body.write(tb.size and 0xFF)
+            body.write(tb)
+        }
+        val bodyBytes = body.toByteArray()
+        val pkt = ByteArrayOutputStream(5 + bodyBytes.size)
+        pkt.write(0xA2) // UNSUBSCRIBE MQTT 3.1.1
         writeVarLen(pkt, bodyBytes.size)
         pkt.write(bodyBytes)
         val raw = pkt.toByteArray()

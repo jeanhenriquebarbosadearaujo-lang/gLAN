@@ -127,6 +127,7 @@
 
                 <!-- SELETOR PRIVADA / PÚBLICA -->
                 <TextView
+                    android:id="@+id/txtLabelVisibilidade"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="VISIBILIDADE DA SALA"
@@ -464,6 +465,7 @@
                             android:id="@+id/txtStatusLobby"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:layout_marginEnd="6dp"
                             android:background="@color/surface_elevated"
                             android:paddingHorizontal="8dp"
                             android:paddingVertical="3dp"
@@ -471,6 +473,19 @@
                             android:textColor="@color/text_secondary"
                             android:textSize="10sp"
                             android:textStyle="bold" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnAtualizarLobby"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minWidth="0dp"
+                            android:paddingHorizontal="6dp"
+                            android:text="Atualizar"
+                            android:textColor="@color/neon_cyan"
+                            android:textSize="11sp" />
                     </LinearLayout>
 
                     <TextView

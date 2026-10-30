@@ -157,6 +157,7 @@ class GdroidLanVpnService : VpnService() {
     private val clientSessionId: Long = SecureRandom().nextLong()
     @Volatile private var myPublicEndpoint: InetSocketAddress? = null
     @Volatile private var myLocalEndpoint: InetSocketAddress? = null
+    @Volatile private var lastManualPingAtMs: Long = 0L
 
     private val peersByNode = ConcurrentHashMap<Int, PeerNode>()
     private val sessionToNode = ConcurrentHashMap<Long, Int>()
@@ -172,7 +173,9 @@ class GdroidLanVpnService : VpnService() {
             }
 
             ACTION_MANUAL_PING -> {
-                if (sessionRunning.get()) {
+                val now = System.currentTimeMillis()
+                if (sessionRunning.get() && now - lastManualPingAtMs >= 4_500L) {
+                    lastManualPingAtMs = now
                     manualPingPending.set(true)
                     Thread({ sendImmediatePingToPeers() }, "gdroid-manual-ping").start()
                 }
@@ -180,29 +183,19 @@ class GdroidLanVpnService : VpnService() {
             }
 
             ACTION_UPDATE_CONFIG -> {
+                // Capacidade e visibilidade permanecem travadas enquanto a sala estiver ativa
+                if (sessionRunning.get()) {
+                    return START_STICKY
+                }
                 val newMax = intent.getIntExtra(EXTRA_MAX_PLAYERS, -1)
                 if (newMax in TunnelProtocol.MIN_TOTAL_PLAYERS..TunnelProtocol.MAX_TOTAL_PLAYERS) {
                     maxTotalPlayers = newMax
                 }
-                val wasPublic = isPublicRoom
                 if (intent.hasExtra(EXTRA_IS_PUBLIC)) {
                     isPublicRoom = intent.getBooleanExtra(EXTRA_IS_PUBLIC, isPublicRoom)
                 }
                 intent.getStringExtra(EXTRA_ROOM_TITLE)?.let {
                     publicRoomTitle = it.trim().take(28)
-                }
-                if (sessionRunning.get()) {
-                    if (isHostRole) {
-                        Thread({
-                            broadcastRosterFromHost()
-                            if (isPublicRoom) {
-                                publishPublicLobbyBeacon()
-                            } else if (wasPublic) {
-                                publishPublicLobbyClose()
-                            }
-                        }, "gdroid-cfg-roster").start()
-                    }
-                    refreshSnapshotUi()
                 }
                 return START_STICKY
             }
@@ -576,6 +569,24 @@ class GdroidLanVpnService : VpnService() {
         val now = System.currentTimeMillis()
 
         when (plain[0]) {
+            TunnelProtocol.TYPE_PROBE_REQ -> {
+                if (!isHostRole) return
+                val probe = TunnelProtocol.parseProbeReq(plain) ?: return
+                val aliveTotal = 1 + peersByNode.values.count { it.isAlive(now) }
+                val status = when {
+                    probe.accountUid != 0L && blockedAccountUids.contains(probe.accountUid) ->
+                        TunnelProtocol.PROBE_STATUS_BLOCKED
+                    aliveTotal >= maxTotalPlayers ->
+                        TunnelProtocol.PROBE_STATUS_FULL
+                    else ->
+                        TunnelProtocol.PROBE_STATUS_OK
+                }
+                val ack = cipher?.encrypt(
+                    TunnelProtocol.buildProbeAck(probe.probeId, status, aliveTotal, maxTotalPlayers)
+                ) ?: return
+                mqttClient?.publish("$topicRoot/h2c/ctl", ack)
+            }
+
             TunnelProtocol.TYPE_JOIN_REQ -> {
                 if (!isHostRole) return
                 val req = TunnelProtocol.parseJoinReq(plain) ?: return
@@ -976,12 +987,20 @@ class GdroidLanVpnService : VpnService() {
                 val now = System.currentTimeMillis()
 
                 if (!isHostRole && myNodeId == 0) {
-                    if (now - startedAt > 20_000L) {
-                        failAndStop("Sala '$activeRoomCode' não localizada. Confirme se o anfitrião já iniciou o servidor.")
+                    if (now - startedAt > 6_000L) {
+                        failAndStop("Essa sala não existe ou já foi encerrada.")
                         break
                     }
                     sendClientJoinRequest()
                     continue
+                }
+
+                if (!isHostRole && myNodeId > 0) {
+                    val hostPeer = peersByNode[TunnelProtocol.HOST_NODE_ID]
+                    if (hostPeer != null && !hostPeer.isAlive(now)) {
+                        failAndStop("A sala foi encerrada pelo anfitrião.")
+                        break
+                    }
                 }
 
                 if (tick % 8 == 1) {

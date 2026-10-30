@@ -40,8 +40,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4
-          name: gLAN v2.4
+          tag_name: v2.5
+          name: gLAN v2.5
           files: gLAN.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
