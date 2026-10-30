@@ -17,6 +17,7 @@ import com.gdroidlan.app.MainActivity
 import com.gdroidlan.app.R
 import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.net.MqttLightClient
+import com.gdroidlan.app.net.PublicLobbyBrowser
 import com.gdroidlan.app.net.StunClient
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -43,6 +44,8 @@ class GdroidLanVpnService : VpnService() {
     data class TunnelSnapshot(
         val phase: StatusPhase = StatusPhase.OFFLINE,
         val isHost: Boolean = true,
+        val isPublicRoom: Boolean = false,
+        val publicRoomTitle: String = "",
         val roomCode: String = "",
         val myNodeId: Int = 0,
         val myVirtualIp: String = "—",
@@ -90,6 +93,8 @@ class GdroidLanVpnService : VpnService() {
         const val EXTRA_PLAYER_NAME = "player_name"
         const val EXTRA_ACCOUNT_UID = "account_uid"
         const val EXTRA_MAX_PLAYERS = "max_players"
+        const val EXTRA_IS_PUBLIC = "is_public"
+        const val EXTRA_ROOM_TITLE = "room_title"
         const val EXTRA_TARGET_NODE_ID = "target_node_id"
         const val EXTRA_BLOCK_SESSION = "block_session"
 
@@ -143,6 +148,8 @@ class GdroidLanVpnService : VpnService() {
     @Volatile private var myDisplayName = "Jogador"
     @Volatile private var myAccountUid = 0L
     @Volatile private var maxTotalPlayers = TunnelProtocol.MAX_TOTAL_PLAYERS
+    @Volatile private var isPublicRoom = false
+    @Volatile private var publicRoomTitle = ""
     @Volatile private var hostDisplayNameOnClient = "Anfitrião"
     @Volatile private var remoteRosterCache: List<TunnelProtocol.RoomMemberInfo> = emptyList()
 
@@ -177,9 +184,23 @@ class GdroidLanVpnService : VpnService() {
                 if (newMax in TunnelProtocol.MIN_TOTAL_PLAYERS..TunnelProtocol.MAX_TOTAL_PLAYERS) {
                     maxTotalPlayers = newMax
                 }
+                val wasPublic = isPublicRoom
+                if (intent.hasExtra(EXTRA_IS_PUBLIC)) {
+                    isPublicRoom = intent.getBooleanExtra(EXTRA_IS_PUBLIC, isPublicRoom)
+                }
+                intent.getStringExtra(EXTRA_ROOM_TITLE)?.let {
+                    publicRoomTitle = it.trim().take(28)
+                }
                 if (sessionRunning.get()) {
                     if (isHostRole) {
-                        Thread({ broadcastRosterFromHost() }, "gdroid-cfg-roster").start()
+                        Thread({
+                            broadcastRosterFromHost()
+                            if (isPublicRoom) {
+                                publishPublicLobbyBeacon()
+                            } else if (wasPublic) {
+                                publishPublicLobbyClose()
+                            }
+                        }, "gdroid-cfg-roster").start()
                     }
                     refreshSnapshotUi()
                 }
@@ -226,6 +247,8 @@ class GdroidLanVpnService : VpnService() {
                     .coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
 
                 val wantHost = (intent.action == ACTION_START_HOST)
+                isPublicRoom = wantHost && intent.getBooleanExtra(EXTRA_IS_PUBLIC, false)
+                publicRoomTitle = intent.getStringExtra(EXTRA_ROOM_TITLE).orEmpty().trim().take(28)
                 startTunnelSession(wantHost, cleanCode)
                 return START_STICKY
             }
@@ -275,6 +298,8 @@ class GdroidLanVpnService : VpnService() {
             TunnelSnapshot(
                 phase = StatusPhase.CONNECTING,
                 isHost = asHost,
+                isPublicRoom = isPublicRoom,
+                publicRoomTitle = publicRoomTitle,
                 roomCode = roomCode,
                 myNodeId = myNodeId,
                 myVirtualIp = if (asHost) TunnelProtocol.HOST_VIRTUAL_IP else "Negociando...",
@@ -430,6 +455,32 @@ class GdroidLanVpnService : VpnService() {
         val members = buildHostMembersList()
         val enc = cipher?.encrypt(TunnelProtocol.buildRoster(maxTotalPlayers, members)) ?: return
         mqttClient?.publish("$topicRoot/h2c/ctl", enc)
+        if (isPublicRoom) {
+            publishPublicLobbyBeacon(currentCount = members.size)
+        }
+    }
+
+    private fun publishPublicLobbyBeacon(currentCount: Int = -1) {
+        if (!isHostRole || !isPublicRoom || !sessionRunning.get()) return
+        val count = if (currentCount > 0) {
+            currentCount
+        } else {
+            1 + peersByNode.values.count { it.isAlive() }
+        }
+        val beacon = PublicLobbyBrowser.buildOpenBeaconEncrypted(
+            roomCode = activeRoomCode,
+            roomTitle = publicRoomTitle,
+            hostName = myDisplayName,
+            currentPlayers = count,
+            maxPlayers = maxTotalPlayers
+        )
+        mqttClient?.publish(PublicLobbyBrowser.LOBBY_TOPIC, beacon)
+    }
+
+    private fun publishPublicLobbyClose() {
+        if (activeRoomCode.isBlank()) return
+        val closeBeacon = PublicLobbyBrowser.buildCloseBeaconEncrypted(activeRoomCode)
+        mqttClient?.publish(PublicLobbyBrowser.LOBBY_TOPIC, closeBeacon)
     }
 
     // =========================================================================
@@ -950,6 +1001,8 @@ class GdroidLanVpnService : VpnService() {
                     }
                     if (removedAny || tick % 2 == 0) {
                         broadcastRosterFromHost()
+                    } else if (isPublicRoom) {
+                        publishPublicLobbyBeacon()
                     }
                 }
 
@@ -985,7 +1038,11 @@ class GdroidLanVpnService : VpnService() {
             } else if (mqttOk) {
                 phase = StatusPhase.WAITING_FRIEND
                 routeLabel = "Pronto"
-                detail = "Servidor pronto. Envie o código $activeRoomCode para entrarem."
+                detail = if (isPublicRoom) {
+                    "Sala pública aberta e visível na lista para todos."
+                } else {
+                    "Sala privada pronta. Envie o código $activeRoomCode para entrarem."
+                }
             } else {
                 phase = StatusPhase.CONNECTING
                 routeLabel = "..."
@@ -1036,6 +1093,8 @@ class GdroidLanVpnService : VpnService() {
             TunnelSnapshot(
                 phase = phase,
                 isHost = isHostRole,
+                isPublicRoom = isPublicRoom,
+                publicRoomTitle = publicRoomTitle,
                 roomCode = activeRoomCode,
                 myNodeId = myNodeId,
                 myVirtualIp = myIp,
@@ -1071,6 +1130,9 @@ class GdroidLanVpnService : VpnService() {
         val wasRunning = sessionRunning.getAndSet(false)
         if (wasRunning && myNodeId > 0) {
             try {
+                if (isHostRole && isPublicRoom) {
+                    publishPublicLobbyClose()
+                }
                 val bye = cipher?.encrypt(TunnelProtocol.buildBye(myNodeId))
                 if (bye != null) {
                     val t = if (isHostRole) "$topicRoot/h2c/ctl" else "$topicRoot/c2h/ctl"

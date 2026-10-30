@@ -14,7 +14,7 @@
         android:paddingTop="14dp"
         android:paddingBottom="24dp">
 
-        <!-- CABEÇALHO UNIFICADO E LIMPO -->
+        <!-- CABEÇALHO UNIFICADO -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -105,7 +105,9 @@
                 app:strokeColor="@color/stroke_subtle" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
-        <!-- CARD CONFIGURAÇÃO DO SERVIDOR -->
+        <!-- =============================================================== -->
+        <!-- MODO SERVIDOR (CRIAR SERVIDOR)                                  -->
+        <!-- =============================================================== -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardHost"
             android:layout_width="match_parent"
@@ -123,7 +125,87 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <!-- LINHA 1: CABEÇALHO DO CÓDIGO -->
+                <!-- SELETOR PRIVADA / PÚBLICA -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="VISIBILIDADE DA SALA"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/grupoVisibilidade"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    app:selectionRequired="true"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSalaPrivada"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="Privada"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        app:icon="@drawable/ic_lock"
+                        app:iconGravity="textStart"
+                        app:iconPadding="6dp"
+                        app:iconSize="15dp"
+                        app:iconTint="@color/text_secondary"
+                        app:strokeColor="@color/stroke_subtle" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSalaPublica"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="Pública"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        app:icon="@drawable/ic_globe"
+                        app:iconGravity="textStart"
+                        app:iconPadding="6dp"
+                        app:iconSize="15dp"
+                        app:iconTint="@color/neon_cyan"
+                        app:strokeColor="@color/stroke_subtle" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                <!-- NOME DA SALA PÚBLICA (EXIBIDO APENAS QUANDO "PÚBLICA" ESTÁ ATIVA) -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutNomeSalaPublica"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:hint="Nome da Sala Pública (opcional)"
+                    android:visibility="gone">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/edtNomeSalaPublica"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textCapSentences"
+                        android:maxLength="28"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="14dp"
+                    android:background="@color/stroke_subtle" />
+
+                <!-- CÓDIGO DA SALA -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -208,7 +290,7 @@
                     android:layout_marginVertical="14dp"
                     android:background="@color/stroke_subtle" />
 
-                <!-- LINHA 2: QUANTIDADE DE JOGADORES (SOMENTE - E +, ATÉ 8) -->
+                <!-- QUANTIDADE DE JOGADORES (2 ATÉ 8 VIA - / +) -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -287,7 +369,7 @@
                     android:layout_marginVertical="14dp"
                     android:background="@color/stroke_subtle" />
 
-                <!-- LINHA 3: IP FIXO DO SERVIDOR -->
+                <!-- IP FIXO DO SERVIDOR -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -336,9 +418,149 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- CARD ENTRAR NA SALA (CLIENTE) -->
+        <!-- =============================================================== -->
+        <!-- MODO CLIENTE: SALAS PÚBLICAS ABERTAS + ENTRAR POR CÓDIGO         -->
+        <!-- =============================================================== -->
+        <LinearLayout
+            android:id="@+id/secaoBuscaCliente"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- CARD 1: SALAS PÚBLICAS ABERTAS -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                app:cardBackgroundColor="@color/surface_card"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/stroke_subtle"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="SALAS PÚBLICAS ABERTAS"
+                            android:textColor="@color/neon_cyan"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txtStatusLobby"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@color/surface_elevated"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="3dp"
+                            android:text="Ao vivo"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/txtSemSalasPublicas"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="Nenhuma sala pública aberta no momento."
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:id="@+id/containerSalasPublicas"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- CARD 2: ENTRAR POR CÓDIGO PRIVADO -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                app:cardBackgroundColor="@color/surface_card"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/stroke_subtle"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="ENTRAR COM CÓDIGO PRIVADO"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:hint="Ex.: K7P9M2">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edtCodigoAmigo"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:inputType="textCapCharacters|textNoSuggestions"
+                                android:maxLength="10"
+                                android:singleLine="true"
+                                android:textColor="@color/text_primary"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnColarCodigoAmigo"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="52dp"
+                            android:text="Colar"
+                            android:textColor="@color/neon_cyan"
+                            app:strokeColor="@color/stroke_subtle" />
+                    </LinearLayout>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+
+        <!-- BANNER DE IP DO SERVIDOR QUANDO CLIENTE JÁ ESTÁ CONECTADO -->
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardCliente"
+            android:id="@+id/cardIpClienteConectado"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
@@ -346,111 +568,51 @@
             app:cardBackgroundColor="@color/surface_card"
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
-            app:strokeColor="@color/stroke_subtle"
+            app:strokeColor="@color/neon_cyan"
             app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
                 android:padding="16dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="CÓDIGO DA SALA"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-
                 <LinearLayout
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
-                        android:layout_weight="1"
-                        android:hint="Ex.: K7P9M2">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/edtCodigoAmigo"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="monospace"
-                            android:inputType="textCapCharacters|textNoSuggestions"
-                            android:maxLength="10"
-                            android:singleLine="true"
-                            android:textColor="@color/text_primary"
-                            android:textSize="18sp"
-                            android:textStyle="bold" />
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnColarCodigoAmigo"
-                        style="?attr/materialButtonOutlinedStyle"
+                    <TextView
                         android:layout_width="wrap_content"
-                        android:layout_height="52dp"
-                        android:text="Colar"
+                        android:layout_height="wrap_content"
+                        android:text="IP PARA ENTRAR NO GDROID"
                         android:textColor="@color/neon_cyan"
-                        app:strokeColor="@color/stroke_subtle" />
-                </LinearLayout>
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="14dp"
-                    android:background="@color/stroke_subtle" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="IP para informar no GDroid"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="1dp"
-                            android:fontFamily="monospace"
-                            android:text="10.10.0.1"
-                            android:textColor="@color/neon_emerald"
-                            android:textSize="16sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnCopiarIpParaJogo"
-                        style="?attr/materialButtonOutlinedStyle"
+                    <TextView
                         android:layout_width="wrap_content"
-                        android:layout_height="36dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:minWidth="0dp"
-                        android:paddingHorizontal="12dp"
-                        android:text="Copiar IP"
-                        android:textColor="@color/neon_emerald"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:fontFamily="monospace"
+                        android:text="10.10.0.1"
+                        android:textColor="@color/text_primary"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
                 </LinearLayout>
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCopiarIpParaJogo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:text="Copiar IP"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="@color/neon_emerald"
+                    app:cornerRadius="12dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -465,7 +627,7 @@
             android:textStyle="bold"
             app:cornerRadius="14dp" />
 
-        <!-- LINHA DE STATUS / AVISO (VISÍVEL SOMENTE QUANDO HÁ MENSAGEM ATIVA) -->
+        <!-- MENSAGEM DE STATUS -->
         <TextView
             android:id="@+id/txtDetalheStatus"
             android:layout_width="match_parent"
@@ -476,7 +638,7 @@
             android:textSize="12sp"
             android:visibility="gone" />
 
-        <!-- PAINEL DE SESSÃO ATIVA (JOGADORES + CONEXÃO COMPACTA, APARECE AO CONECTAR) -->
+        <!-- PAINEL DE SESSÃO ATIVA (JOGADORES + REDE) -->
         <LinearLayout
             android:id="@+id/painelSessaoAtiva"
             android:layout_width="match_parent"
@@ -540,7 +702,7 @@
                             android:paddingHorizontal="8dp"
                             android:paddingVertical="3dp"
                             android:text="1 / 8"
-                            android:textColor="@color/neon_emerald"
+                            android:textColor="@color/neon_cyan"
                             android:textSize="11sp"
                             android:textStyle="bold" />
                     </LinearLayout>
@@ -630,7 +792,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="Pronto"
-                                android:textColor="@color/neon_emerald"
+                                android:textColor="@color/neon_cyan"
                                 android:textSize="13sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
@@ -681,7 +843,7 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
 
-        <!-- RESUMO RÁPIDO (EXIBIDO APENAS QUANDO OFFLINE PARA NÃO POLUIR A TELA EM JOGO) -->
+        <!-- RESUMO RÁPIDO (EXIBIDO APENAS QUANDO OFFLINE) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardComoUsar"
             android:layout_width="match_parent"
@@ -702,7 +864,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="RESUMO DE USO"
+                    android:text="COMO FUNCIONA"
                     android:textColor="@color/text_secondary"
                     android:textSize="10sp"
                     android:textStyle="bold" />
@@ -712,7 +874,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
                     android:lineSpacingExtra="3dp"
-                    android:text="1. O anfitrião inicia o servidor e envia o Código da Sala.\n2. Os convidados entram na sala pelo código.\n3. No GDroid, todos entram pelo IP fixo 10.10.0.1."
+                    android:text="1. Sala Pública aparece aberta para todos; Sala Privada exige o Código da Sala.\n2. Conecte na sala desejada e copie o IP fixo 10.10.0.1.\n3. Abra o GDroid e entre na partida usando o IP 10.10.0.1."
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
             </LinearLayout>
