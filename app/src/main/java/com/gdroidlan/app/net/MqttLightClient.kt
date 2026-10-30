@@ -131,7 +131,8 @@ class MqttLightClient(
         rawSocket.soTimeout = 45_000
 
         val finalSocket: Socket = if (ep.tls) {
-            val ssl = (SSLSocketFactory.getDefault().createSocket(rawSocket, ep.host, ep.port, true) as SSLSocket)
+            val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            val ssl = sslFactory.createSocket(rawSocket, ep.host, ep.port, true) as SSLSocket
             ssl.useClientMode = true
             ssl.startHandshake()
             ssl
@@ -182,11 +183,17 @@ class MqttLightClient(
                 try {
                     Thread.sleep(18_000L)
                     if (!running.get() || !connected.get()) break
+                    var shouldStop = false
                     synchronized(writeLock) {
-                        val out = activeOut ?: break
-                        out.write(byteArrayOf(0xC0.toByte(), 0x00))
-                        out.flush()
+                        val out = activeOut
+                        if (out == null) {
+                            shouldStop = true
+                        } else {
+                            out.write(byteArrayOf(0xC0.toByte(), 0x00))
+                            out.flush()
+                        }
                     }
+                    if (shouldStop) break
                 } catch (_: Exception) {
                     break
                 }
