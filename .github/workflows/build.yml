@@ -27,13 +27,13 @@ jobs:
       - name: Compilar APK assinado
         run: |
           gradle assembleDebug --no-daemon --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk GDroid-LAN-v2.1.apk
+          cp app/build/outputs/apk/debug/app-debug.apk GDroid-LAN-v2.2.apk
 
       - name: Enviar APK como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: GDroid-LAN-v2.1
-          path: GDroid-LAN-v2.1.apk
+          name: GDroid-LAN-v2.2
+          path: GDroid-LAN-v2.2.apk
           if-no-files-found: error
 
       - name: Publicar release com o APK
@@ -41,7 +41,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: GDroid LAN v2.1 (Build ${{ github.run_number }})
-          files: GDroid-LAN-v2.1.apk
+          name: GDroid LAN v2.2 (Build ${{ github.run_number }})
+          files: GDroid-LAN-v2.2.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

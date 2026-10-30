@@ -10,19 +10,20 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingHorizontal="18dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="24dp">
 
-        <!-- CABEÇALHO SUPERIOR -->
+        <!-- CABEÇALHO UNIFICADO E LIMPO -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingVertical="4dp">
+            android:orientation="horizontal">
 
             <ImageView
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
                 android:contentDescription="@string/app_name"
                 android:src="@drawable/img_hero_logo" />
 
@@ -38,13 +39,15 @@
                     android:layout_height="wrap_content"
                     android:text="GDroid LAN"
                     android:textColor="@color/text_primary"
-                    android:textSize="20sp"
+                    android:textSize="19sp"
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/txtContaTopo"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Rede LAN Virtual P2P • v2.1"
+                    android:layout_marginTop="1dp"
+                    android:text="Conta: Jogador"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
             </LinearLayout>
@@ -62,78 +65,12 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- BARRA DE CONTA E IDENTIFICAÇÃO DO JOGADOR -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="14dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/stroke_subtle"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="10dp">
-
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:contentDescription="Perfil"
-                    android:src="@drawable/ic_person"
-                    app:tint="@color/neon_emerald" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/txtNomeConta"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Jogador"
-                        android:textColor="@color/text_primary"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/txtUsuarioConta"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Conta única ativa"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/txtTagConta"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@color/surface_elevated"
-                    android:fontFamily="monospace"
-                    android:paddingHorizontal="10dp"
-                    android:paddingVertical="4dp"
-                    android:text="ID #000000"
-                    android:textColor="@color/neon_cyan"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- SELETOR DE MODO: SERVIDOR OU CLIENTE -->
+        <!-- ABAS PRINCIPAIS -->
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/grupoModo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="16dp"
             app:selectionRequired="true"
             app:singleSelection="true">
 
@@ -141,13 +78,14 @@
                 android:id="@+id/btnModoHost"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="46dp"
                 android:layout_weight="1"
                 android:text="Criar Servidor"
                 android:textColor="@color/text_primary"
+                android:textSize="13sp"
                 app:icon="@drawable/ic_server"
                 app:iconGravity="textStart"
-                app:iconPadding="8dp"
+                app:iconPadding="6dp"
                 app:iconTint="@color/neon_emerald"
                 app:strokeColor="@color/stroke_subtle" />
 
@@ -155,25 +93,258 @@
                 android:id="@+id/btnModoCliente"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="46dp"
                 android:layout_weight="1"
                 android:text="Entrar na Sala"
                 android:textColor="@color/text_primary"
+                android:textSize="13sp"
                 app:icon="@drawable/ic_lan_connect"
                 app:iconGravity="textStart"
-                app:iconPadding="8dp"
+                app:iconPadding="6dp"
                 app:iconTint="@color/neon_cyan"
                 app:strokeColor="@color/stroke_subtle" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
-        <!-- CARD MODO SERVIDOR (HOST) -->
+        <!-- CARD CONFIGURAÇÃO DO SERVIDOR -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardHost"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="18dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/stroke_subtle"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- LINHA 1: CABEÇALHO DO CÓDIGO -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="CÓDIGO DA SALA"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnGerarNovoCodigo"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="6dp"
+                        android:text="Gerar outro"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/txtCodigoHost"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:background="@color/surface_elevated"
+                    android:fontFamily="monospace"
+                    android:gravity="center"
+                    android:letterSpacing="0.22"
+                    android:paddingVertical="12dp"
+                    android:text="K7P9M2"
+                    android:textColor="@color/text_primary"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCopiarCodigoHost"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="8dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="Copiar Código"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        app:strokeColor="@color/stroke_subtle" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCompartilharCodigo"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="Compartilhar"
+                        android:textColor="@color/neon_cyan"
+                        android:textSize="12sp"
+                        app:strokeColor="@color/stroke_subtle" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="14dp"
+                    android:background="@color/stroke_subtle" />
+
+                <!-- LINHA 2: QUANTIDADE DE JOGADORES (SOMENTE - E +, ATÉ 8) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Limite de Jogadores"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txtSubtituloLimite"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Você + 7 convidados (máx. 8)"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnMenosVagas"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:text="-"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:strokeColor="@color/stroke_subtle" />
+
+                    <TextView
+                        android:id="@+id/txtNumeroJogadores"
+                        android:layout_width="44dp"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:gravity="center"
+                        android:text="8"
+                        android:textColor="@color/neon_emerald"
+                        android:textSize="20sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnMaisVagas"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:text="+"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:strokeColor="@color/stroke_subtle" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="14dp"
+                    android:background="@color/stroke_subtle" />
+
+                <!-- LINHA 3: IP FIXO DO SERVIDOR -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="IP do Servidor no GDroid"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="1dp"
+                            android:fontFamily="monospace"
+                            android:text="10.10.0.1"
+                            android:textColor="@color/neon_cyan"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCopiarIpHost"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="12dp"
+                        android:text="Copiar IP"
+                        android:textColor="@color/neon_cyan"
+                        android:textSize="12sp"
+                        app:strokeColor="@color/stroke_subtle" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- CARD ENTRAR NA SALA (CLIENTE) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardCliente"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:visibility="gone"
+            app:cardBackgroundColor="@color/surface_card"
+            app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/stroke_subtle"
             app:strokeWidth="1dp">
@@ -188,298 +359,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="CÓDIGO DA SALA"
-                    android:textColor="@color/neon_emerald"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/txtCodigoHost"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:background="@color/surface_elevated"
-                    android:fontFamily="monospace"
-                    android:gravity="center"
-                    android:letterSpacing="0.22"
-                    android:paddingVertical="14dp"
-                    android:text="K7P9M2"
-                    android:textColor="@color/text_primary"
-                    android:textSize="28sp"
-                    android:textStyle="bold" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:orientation="horizontal">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnCopiarCodigoHost"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="42dp"
-                        android:layout_marginEnd="6dp"
-                        android:layout_weight="1"
-                        android:text="Copiar"
-                        android:textColor="@color/text_primary"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnCompartilharCodigo"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="42dp"
-                        android:layout_marginEnd="6dp"
-                        android:layout_weight="1"
-                        android:text="Compartilhar"
-                        android:textColor="@color/neon_cyan"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnGerarNovoCodigo"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="42dp"
-                        android:layout_weight="1"
-                        android:text="Novo"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
-                </LinearLayout>
-
-                <!-- SELETOR DE LIMITE DE JOGADORES NA PARTIDA -->
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="14dp"
-                    android:background="@color/stroke_subtle" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="LIMITE DE PESSOAS NA SALA"
                     android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:background="@color/surface_elevated"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="10dp">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnMenosVagas"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="44dp"
-                        android:layout_height="44dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:padding="0dp"
-                        android:text="-"
-                        android:textColor="@color/text_primary"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        app:strokeColor="@color/stroke_subtle" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:gravity="center"
-                        android:orientation="vertical"
-                        android:paddingHorizontal="8dp">
-
-                        <TextView
-                            android:id="@+id/txtLimiteVagas"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="8 convidados"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/txtResumoCapacidade"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Total na partida: 9 jogadores"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
-                    </LinearLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnMaisVagas"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="44dp"
-                        android:layout_height="44dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:padding="0dp"
-                        android:text="+"
-                        android:textColor="@color/text_primary"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        app:strokeColor="@color/stroke_subtle" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:orientation="horizontal">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnPreset2"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="36dp"
-                        android:layout_marginEnd="4dp"
-                        android:layout_weight="1"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:padding="0dp"
-                        android:text="2"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnPreset4"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="36dp"
-                        android:layout_marginEnd="4dp"
-                        android:layout_weight="1"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:padding="0dp"
-                        android:text="4"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnPreset8"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="36dp"
-                        android:layout_marginEnd="4dp"
-                        android:layout_weight="1"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:padding="0dp"
-                        android:text="8"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnPreset16"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="36dp"
-                        android:layout_marginEnd="4dp"
-                        android:layout_weight="1"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:padding="0dp"
-                        android:text="16"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnPreset32"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="0dp"
-                        android:layout_height="36dp"
-                        android:layout_weight="1"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:padding="0dp"
-                        android:text="32"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        app:strokeColor="@color/stroke_subtle" />
-                </LinearLayout>
-
-                <!-- IP DO SERVIDOR NO GDROID -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:background="@color/surface_elevated"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="12dp">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="ENDEREÇO IP FIXO DO SERVIDOR NO GDROID"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="10sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:fontFamily="monospace"
-                            android:text="10.10.0.1"
-                            android:textColor="@color/neon_cyan"
-                            android:textSize="18sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnCopiarIpHost"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Copiar IP"
-                        android:textColor="@color/neon_cyan" />
-                </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- CARD MODO CLIENTE (ENTRAR NA SALA) -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardCliente"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="18dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/stroke_subtle"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="CÓDIGO DA SALA DO ANFITRIÃO"
-                    android:textColor="@color/neon_cyan"
                     android:textSize="11sp"
                     android:textStyle="bold" />
 
@@ -504,8 +384,9 @@
                             android:fontFamily="monospace"
                             android:inputType="textCapCharacters|textNoSuggestions"
                             android:maxLength="10"
+                            android:singleLine="true"
                             android:textColor="@color/text_primary"
-                            android:textSize="20sp"
+                            android:textSize="18sp"
                             android:textStyle="bold" />
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -513,20 +394,23 @@
                         android:id="@+id/btnColarCodigoAmigo"
                         style="?attr/materialButtonOutlinedStyle"
                         android:layout_width="wrap_content"
-                        android:layout_height="54dp"
+                        android:layout_height="52dp"
                         android:text="Colar"
                         android:textColor="@color/neon_cyan"
                         app:strokeColor="@color/stroke_subtle" />
                 </LinearLayout>
 
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="14dp"
+                    android:background="@color/stroke_subtle" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:background="@color/surface_elevated"
                     android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="12dp">
+                    android:orientation="horizontal">
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -537,130 +421,274 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="ENDEREÇO IP PARA INFORMAR NO GDROID"
+                            android:text="IP para informar no GDroid"
                             android:textColor="@color/text_secondary"
-                            android:textSize="10sp"
-                            android:textStyle="bold" />
+                            android:textSize="11sp" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginTop="1dp"
                             android:fontFamily="monospace"
                             android:text="10.10.0.1"
                             android:textColor="@color/neon_emerald"
-                            android:textSize="18sp"
+                            android:textSize="16sp"
                             android:textStyle="bold" />
                     </LinearLayout>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnCopiarIpParaJogo"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="?attr/materialButtonOutlinedStyle"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Copiar 10.10.0.1"
-                        android:textColor="@color/neon_emerald" />
+                        android:layout_height="36dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="12dp"
+                        android:text="Copiar IP"
+                        android:textColor="@color/neon_emerald"
+                        android:textSize="12sp"
+                        app:strokeColor="@color/stroke_subtle" />
                 </LinearLayout>
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- BOTÃO PRINCIPAL DE CONEXÃO -->
+        <!-- BOTÃO PRINCIPAL -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnAcaoPrincipal"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="54dp"
             android:layout_marginTop="14dp"
-            android:text="INICIAR SERVIDOR LAN"
+            android:text="INICIAR SERVIDOR"
             android:textSize="14sp"
             android:textStyle="bold"
             app:cornerRadius="14dp" />
 
-        <!-- LISTA DE PARTICIPANTES NA SALA + GERENCIAMENTO (REMOVER DO SERVIDOR) -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardParticipantes"
+        <!-- LINHA DE STATUS / AVISO (VISÍVEL SOMENTE QUANDO HÁ MENSAGEM ATIVA) -->
+        <TextView
+            android:id="@+id/txtDetalheStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="18dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/stroke_subtle"
-            app:strokeWidth="1dp">
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:visibility="gone" />
 
-            <LinearLayout
+        <!-- PAINEL DE SESSÃO ATIVA (JOGADORES + CONEXÃO COMPACTA, APARECE AO CONECTAR) -->
+        <LinearLayout
+            android:id="@+id/painelSessaoAtiva"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- CARD JOGADORES NA SALA -->
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+                android:layout_marginTop="12dp"
+                app:cardBackgroundColor="@color/surface_card"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/stroke_subtle"
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="JOGADORES NA SALA"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDesbloquearRemovidos"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:layout_marginEnd="6dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minWidth="0dp"
+                            android:paddingHorizontal="6dp"
+                            android:text="Desbloquear (0)"
+                            android:textColor="@color/warning_amber"
+                            android:textSize="11sp"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/txtContadorSala"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@color/surface_elevated"
+                            android:fontFamily="monospace"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="3dp"
+                            android:text="1 / 8"
+                            android:textColor="@color/neon_emerald"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
 
                     <TextView
-                        android:layout_width="0dp"
+                        android:id="@+id/txtSemParticipantes"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="PARTICIPANTES NA SALA"
+                        android:layout_marginTop="10dp"
+                        android:text="Conectando sala..."
                         android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnDesbloquearRemovidos"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_marginEnd="6dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:minWidth="0dp"
-                        android:paddingHorizontal="6dp"
-                        android:text="Desbloquear (0)"
-                        android:textColor="@color/warning_amber"
-                        android:textSize="11sp"
+                        android:textSize="12sp"
                         android:visibility="gone" />
 
-                    <TextView
-                        android:id="@+id/txtContadorSala"
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:id="@+id/containerParticipantes"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:background="@color/surface_elevated"
-                        android:fontFamily="monospace"
-                        android:paddingHorizontal="8dp"
-                        android:paddingVertical="3dp"
-                        android:text="0 / 8"
-                        android:textColor="@color/neon_emerald"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                        android:layout_marginTop="4dp"
+                        android:orientation="vertical" />
                 </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                <TextView
-                    android:id="@+id/txtSemParticipantes"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:text="Nenhuma sessão ativa no momento."
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+            <!-- CARD RESUMO DE REDE COMPACTO -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                app:cardBackgroundColor="@color/surface_card"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/stroke_subtle"
+                app:strokeWidth="1dp">
 
                 <LinearLayout
-                    android:id="@+id/containerParticipantes"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    android:orientation="vertical"
+                    android:padding="14dp">
 
-        <!-- PAINEL DE DIAGNÓSTICO E TELEMETRIA DA REDE -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Meu IP"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp" />
+
+                            <TextView
+                                android:id="@+id/txtMeuIpVirtual"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:fontFamily="monospace"
+                                android:text="10.10.0.1"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Latência"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp" />
+
+                            <TextView
+                                android:id="@+id/txtPingRota"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Pronto"
+                                android:textColor="@color/neon_emerald"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Dados"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp" />
+
+                            <TextView
+                                android:id="@+id/txtTrafego"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="0 KB"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnTestarPing"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="12dp"
+                        android:enabled="false"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="Testar Ping da Sala"
+                        android:textColor="@color/neon_cyan"
+                        android:textSize="12sp"
+                        app:icon="@drawable/ic_ping"
+                        app:iconGravity="textStart"
+                        app:iconPadding="6dp"
+                        app:iconTint="@color/neon_cyan"
+                        app:strokeColor="@color/stroke_subtle" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+
+        <!-- RESUMO RÁPIDO (EXIBIDO APENAS QUANDO OFFLINE PARA NÃO POLUIR A TELA EM JOGO) -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardComoUsar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="18dp"
+            app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/stroke_subtle"
             app:strokeWidth="1dp">
@@ -669,187 +697,22 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="14dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="TELEMETRIA E STATUS DA REDE"
+                    android:text="RESUMO DE USO"
                     android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
+                    android:textSize="10sp"
                     android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/txtDetalheStatus"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Rede virtual desligada. Selecione Criar Servidor ou Entrar na Sala."
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Meu IP Virtual"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
-
-                        <TextView
-                            android:id="@+id/txtMeuIpVirtual"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:fontFamily="monospace"
-                            android:text="—"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Latência / Rota"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
-
-                        <TextView
-                            android:id="@+id/txtPingRota"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="—"
-                            android:textColor="@color/neon_emerald"
-                            android:textSize="15sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:orientation="horizontal">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Clientes Conectados"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
-
-                        <TextView
-                            android:id="@+id/txtAmigosConectados"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="0"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Tráfego de Dados"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
-
-                        <TextView
-                            android:id="@+id/txtTrafego"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Env: 0 B • Rec: 0 B"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnTestarPing"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:layout_marginTop="12dp"
-                    android:enabled="false"
-                    android:text="Testar Latência da Conexão (Ping)"
-                    android:textColor="@color/neon_cyan"
-                    android:textSize="12sp"
-                    app:icon="@drawable/ic_ping"
-                    app:iconGravity="textStart"
-                    app:iconPadding="8dp"
-                    app:iconTint="@color/neon_cyan"
-                    app:strokeColor="@color/stroke_subtle" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- INSTRUÇÕES TÉCNICAS -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:layout_marginBottom="24dp"
-            app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="18dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/stroke_subtle"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="INSTRUÇÕES DE CONEXÃO"
-                    android:textColor="@color/neon_emerald"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:lineSpacingExtra="4dp"
-                    android:text="01. O anfitrião define o limite de participantes, inicia o Servidor LAN e compartilha o Código da Sala.\n\n02. Os convidados acessam Entrar na Sala, inserem o código e aguardam a confirmação CONECTADO.\n\n03. No GDroid, o anfitrião hospeda a partida normalmente e todos os convidados conectam pelo endereço IP 10.10.0.1."
+                    android:lineSpacingExtra="3dp"
+                    android:text="1. O anfitrião inicia o servidor e envia o Código da Sala.\n2. Os convidados entram na sala pelo código.\n3. No GDroid, todos entram pelo IP fixo 10.10.0.1."
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
             </LinearLayout>

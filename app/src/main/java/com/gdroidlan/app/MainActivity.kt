@@ -23,7 +23,6 @@ import com.gdroidlan.app.databinding.ActivityMainBinding
 import com.gdroidlan.app.databinding.ItemPeerRowBinding
 import com.gdroidlan.app.vpn.GdroidLanVpnService
 import com.gdroidlan.app.vpn.TunnelProtocol
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class MainActivity : AppCompatActivity() {
@@ -34,7 +33,7 @@ class MainActivity : AppCompatActivity() {
     private var contaAtiva: AccountManagerStore.UserAccount? = null
     private var modoHostSelecionado = true
     private var codigoHostAtual = ""
-    private var limiteConvidados = 8
+    private var limiteJogadores = TunnelProtocol.MAX_TOTAL_PLAYERS
 
     private var aguardandoPermissaoParaHost = true
     private var codigoPendenteConexao = ""
@@ -44,7 +43,7 @@ class MainActivity : AppCompatActivity() {
             if (res.resultCode == Activity.RESULT_OK) {
                 dispararServicoVpn(aguardandoPermissaoParaHost, codigoPendenteConexao)
             } else {
-                toast("Autorize a permissão de VPN do Android para ativar a rede local virtual.")
+                toast("Autorize a permissão de VPN do Android para ativar a sala.")
             }
         }
 
@@ -74,7 +73,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(b.root)
 
         pedirPermissaoNotificacaoSeNecessario()
-        atualizarCabecalhoConta()
+        b.txtContaTopo.text = "Conta: ${conta.displayName}"
 
         codigoHostAtual = prefs.getString("host_room_code", null)
             ?.takeIf { it.length >= 6 }
@@ -83,7 +82,8 @@ class MainActivity : AppCompatActivity() {
             }
         b.txtCodigoHost.text = codigoHostAtual
 
-        limiteConvidados = prefs.getInt("max_clients", 8).coerceIn(1, 50)
+        limiteJogadores = prefs.getInt("max_players_v22", TunnelProtocol.MAX_TOTAL_PLAYERS)
+            .coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
         renderizarSeletorCapacidade()
 
         prefs.getString("last_friend_code", null)?.let { salvo ->
@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         GdroidLanVpnService.onManualPongToast = { rtt, modo ->
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
-                    toast("Conexão verificada: resposta em ${rtt} ms ($modo).")
+                    toast("Ping da sala: ${rtt} ms ($modo).")
                 }
             }
         }
@@ -121,80 +121,55 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
     }
 
-    private fun atualizarCabecalhoConta() {
-        val c = contaAtiva ?: return
-        b.txtNomeConta.text = c.displayName
-        b.txtUsuarioConta.text = "Conta vinculada a esta instalação"
-        b.txtTagConta.text = "ID #${c.accountTag}"
-    }
-
     private fun configurarSeletorCapacidade() {
         b.btnMenosVagas.setOnClickListener {
-            definirLimiteConvidados((limiteConvidados - 1).coerceAtLeast(1))
+            if (limiteJogadores > TunnelProtocol.MIN_TOTAL_PLAYERS) {
+                definirLimiteJogadores(limiteJogadores - 1)
+            }
         }
         b.btnMaisVagas.setOnClickListener {
-            definirLimiteConvidados((limiteConvidados + 1).coerceAtMost(50))
-        }
-
-        val presets = listOf(
-            b.btnPreset2 to 2,
-            b.btnPreset4 to 4,
-            b.btnPreset8 to 8,
-            b.btnPreset16 to 16,
-            b.btnPreset32 to 32
-        )
-        for ((botao, valor) in presets) {
-            botao.setOnClickListener { definirLimiteConvidados(valor) }
+            if (limiteJogadores < TunnelProtocol.MAX_TOTAL_PLAYERS) {
+                definirLimiteJogadores(limiteJogadores + 1)
+            }
         }
     }
 
-    private fun definirLimiteConvidados(novoLimite: Int) {
-        limiteConvidados = novoLimite.coerceIn(1, 50)
-        prefs.edit().putInt("max_clients", limiteConvidados).apply()
+    private fun definirLimiteJogadores(novoTotal: Int) {
+        limiteJogadores = novoTotal.coerceIn(
+            TunnelProtocol.MIN_TOTAL_PLAYERS,
+            TunnelProtocol.MAX_TOTAL_PLAYERS
+        )
+        prefs.edit().putInt("max_players_v22", limiteJogadores).apply()
         renderizarSeletorCapacidade()
         sincronizarConfiguracaoEmExecucao()
     }
 
     private fun renderizarSeletorCapacidade() {
-        val labelConvidados = if (limiteConvidados == 1) "1 convidado" else "$limiteConvidados convidados"
-        val totalJogadores = limiteConvidados + 1
-        b.txtLimiteVagas.text = labelConvidados
-        b.txtResumoCapacidade.text = "Capacidade total na partida: $totalJogadores jogadores"
-
-        val presets = listOf(
-            b.btnPreset2 to 2,
-            b.btnPreset4 to 4,
-            b.btnPreset8 to 8,
-            b.btnPreset16 to 16,
-            b.btnPreset32 to 32
-        )
-        for ((botao, valor) in presets) {
-            estilizarBotaoPreset(botao, ativo = (limiteConvidados == valor))
-        }
-    }
-
-    private fun estilizarBotaoPreset(btn: MaterialButton, ativo: Boolean) {
-        if (ativo) {
-            btn.setTextColor(Color.parseColor("#00E676"))
-            btn.strokeColor = ColorStateList.valueOf(Color.parseColor("#00E676"))
+        val convidados = limiteJogadores - 1
+        b.txtNumeroJogadores.text = limiteJogadores.toString()
+        b.txtSubtituloLimite.text = if (convidados == 1) {
+            "Você + 1 convidado (máx. 8)"
         } else {
-            btn.setTextColor(Color.parseColor("#94A3B8"))
-            btn.strokeColor = ColorStateList.valueOf(Color.parseColor("#263548"))
+            "Você + $convidados convidados (máx. 8)"
         }
+
+        val podeDiminuir = limiteJogadores > TunnelProtocol.MIN_TOTAL_PLAYERS
+        val podeAumentar = limiteJogadores < TunnelProtocol.MAX_TOTAL_PLAYERS
+        b.btnMenosVagas.isEnabled = podeDiminuir
+        b.btnMenosVagas.alpha = if (podeDiminuir) 1.0f else 0.35f
+        b.btnMaisVagas.isEnabled = podeAumentar
+        b.btnMaisVagas.alpha = if (podeAumentar) 1.0f else 0.35f
     }
 
     private fun sincronizarConfiguracaoEmExecucao() {
         val snap = GdroidLanVpnService.currentSnapshot
         val rodando = snap.phase != GdroidLanVpnService.StatusPhase.OFFLINE &&
             snap.phase != GdroidLanVpnService.StatusPhase.ERROR
-        if (!rodando) {
-            b.txtContadorSala.text = "0 / $limiteConvidados"
-            return
-        }
+        if (!rodando) return
+
         val cfgIntent = Intent(this, GdroidLanVpnService::class.java).apply {
             action = GdroidLanVpnService.ACTION_UPDATE_CONFIG
-            putExtra(GdroidLanVpnService.EXTRA_MAX_CLIENTS, limiteConvidados)
-            putExtra(GdroidLanVpnService.EXTRA_PLAYER_NAME, contaAtiva?.displayName ?: "Jogador")
+            putExtra(GdroidLanVpnService.EXTRA_MAX_PLAYERS, limiteJogadores)
         }
         startService(cfgIntent)
     }
@@ -228,7 +203,7 @@ class MainActivity : AppCompatActivity() {
                 val idCorreto = if (GdroidLanVpnService.currentSnapshot.isHost) R.id.btnModoHost else R.id.btnModoCliente
                 if (checkedId != idCorreto) {
                     b.grupoModo.check(idCorreto)
-                    toast("Encerre a conexão atual antes de alternar entre Servidor e Cliente.")
+                    toast("Encerre a conexão atual antes de trocar de aba.")
                 }
                 return@addOnButtonCheckedListener
             }
@@ -253,34 +228,34 @@ class MainActivity : AppCompatActivity() {
             val anfitriao = contaAtiva?.displayName ?: "Anfitrião"
             val msg = "Sala GDroid LAN de $anfitriao\n" +
                 "Código da Sala: $codigoHostAtual\n" +
-                "Endereço IP no GDroid: ${TunnelProtocol.HOST_VIRTUAL_IP}"
+                "IP no GDroid: ${TunnelProtocol.HOST_VIRTUAL_IP}"
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, msg)
             }
-            startActivity(Intent.createChooser(send, "Compartilhar código da sala"))
+            startActivity(Intent.createChooser(send, "Compartilhar sala"))
         }
 
         b.btnGerarNovoCodigo.setOnClickListener {
             val fase = GdroidLanVpnService.currentSnapshot.phase
             if (fase != GdroidLanVpnService.StatusPhase.OFFLINE && fase != GdroidLanVpnService.StatusPhase.ERROR) {
-                toast("Encerre o servidor atual antes de gerar um novo código.")
+                toast("Encerre o servidor atual antes de gerar outro código.")
                 return@setOnClickListener
             }
             codigoHostAtual = RoomCrypto.generateRoomCode()
             prefs.edit().putString("host_room_code", codigoHostAtual).apply()
             b.txtCodigoHost.text = codigoHostAtual
-            toast("Novo código gerado: $codigoHostAtual.")
+            toast("Novo código: $codigoHostAtual.")
         }
 
         b.btnCopiarIpHost.setOnClickListener {
             copiarTexto("IP GDroid", TunnelProtocol.HOST_VIRTUAL_IP)
-            toast("Endereço IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado.")
+            toast("IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado.")
         }
 
         b.btnCopiarIpParaJogo.setOnClickListener {
             copiarTexto("IP GDroid", TunnelProtocol.HOST_VIRTUAL_IP)
-            toast("Endereço IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado para usar no GDroid.")
+            toast("IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado.")
         }
 
         b.btnColarCodigoAmigo.setOnClickListener {
@@ -293,7 +268,7 @@ class MainActivity : AppCompatActivity() {
                 b.edtCodigoAmigo.setText(norm)
                 b.edtCodigoAmigo.setSelection(norm.length)
             } else {
-                toast("Nenhum código de sala válido encontrado na área de transferência.")
+                toast("Nenhum código válido encontrado para colar.")
             }
         }
 
@@ -315,7 +290,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 val digitado = RoomCrypto.normalizeRoomCode(b.edtCodigoAmigo.text?.toString().orEmpty())
                 if (digitado.length < 4) {
-                    toast("Informe o Código da Sala do anfitrião (ex.: K7P9M2).")
+                    toast("Digite o Código da Sala (ex.: K7P9M2).")
                     return@setOnClickListener
                 }
                 prefs.edit().putString("last_friend_code", digitado).apply()
@@ -328,7 +303,7 @@ class MainActivity : AppCompatActivity() {
                 action = GdroidLanVpnService.ACTION_CLEAR_BLOCKS
             }
             startService(clearIntent)
-            toast("Participantes bloqueados nesta sessão foram liberados.")
+            toast("Lista de bloqueios da sala limpa.")
         }
 
         b.btnTestarPing.setOnClickListener {
@@ -336,7 +311,7 @@ class MainActivity : AppCompatActivity() {
                 action = GdroidLanVpnService.ACTION_MANUAL_PING
             }
             startService(pingIntent)
-            toast("Verificando latência com a sala...")
+            toast("Testando latência...")
         }
     }
 
@@ -358,23 +333,19 @@ class MainActivity : AppCompatActivity() {
             putExtra(GdroidLanVpnService.EXTRA_ROOM_CODE, code)
             putExtra(GdroidLanVpnService.EXTRA_PLAYER_NAME, conta?.displayName ?: "Jogador")
             putExtra(GdroidLanVpnService.EXTRA_ACCOUNT_UID, conta?.accountUid ?: 0L)
-            putExtra(GdroidLanVpnService.EXTRA_MAX_CLIENTS, limiteConvidados)
+            putExtra(GdroidLanVpnService.EXTRA_MAX_PLAYERS, limiteJogadores)
         }
         ContextCompat.startForegroundService(this, i)
     }
 
     private fun confirmarRemocaoParticipante(membro: TunnelProtocol.RoomMemberInfo) {
         MaterialAlertDialogBuilder(this)
-            .setTitle("Remover do Servidor")
-            .setMessage(
-                "Deseja desconectar ${membro.displayName} (${membro.virtualIp}) desta sala?\n\n" +
-                    "• Remover e Bloquear: impede nova entrada até você desbloquear ou reiniciar a sala.\n" +
-                    "• Apenas Desconectar: encerra a conexão atual, permitindo reconectar depois."
-            )
+            .setTitle("Remover da Sala")
+            .setMessage("Como deseja desconectar ${membro.displayName} (${membro.virtualIp})?")
             .setPositiveButton("Remover e Bloquear") { _, _ ->
                 enviarComandoKick(membro.nodeId, bloquearSessao = true)
             }
-            .setNeutralButton("Apenas Desconectar") { _, _ ->
+            .setNeutralButton("Apenas Remover") { _, _ ->
                 enviarComandoKick(membro.nodeId, bloquearSessao = false)
             }
             .setNegativeButton("Cancelar", null)
@@ -422,57 +393,65 @@ class MainActivity : AppCompatActivity() {
                 b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#2600E676"))
             }
             GdroidLanVpnService.StatusPhase.ERROR -> {
-                b.txtBadgeStatus.text = "ATENÇÃO"
+                b.txtBadgeStatus.text = "AVISO"
                 b.txtBadgeStatus.setTextColor(Color.parseColor("#FF5252"))
                 b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#26FF5252"))
             }
         }
 
-        b.txtDetalheStatus.text = snap.statusText
-        b.txtMeuIpVirtual.text = snap.myVirtualIp
-
-        val pingLabel = if (snap.pingMs > 0) "${snap.pingMs} ms • ${snap.routeMode}" else snap.routeMode
-        b.txtPingRota.text = pingLabel
-
-        val maxExibido = if (ativo) snap.maxAllowedClients else limiteConvidados
-        b.txtAmigosConectados.text = "${snap.connectedPeersCount} / $maxExibido"
-        b.txtContadorSala.text = "${snap.connectedPeersCount} / $maxExibido"
-        b.txtTrafego.text = "Env: ${formatarBytes(snap.txBytes)} • Rec: ${formatarBytes(snap.rxBytes)}"
-
-        if (ativo && snap.isHost && snap.blockedCount > 0) {
-            b.btnDesbloquearRemovidos.visibility = View.VISIBLE
-            b.btnDesbloquearRemovidos.text = "Desbloquear (${snap.blockedCount})"
+        if (snap.statusText.isNotBlank() && snap.phase != GdroidLanVpnService.StatusPhase.OFFLINE) {
+            b.txtDetalheStatus.text = snap.statusText
+            b.txtDetalheStatus.setTextColor(
+                if (snap.phase == GdroidLanVpnService.StatusPhase.ERROR) Color.parseColor("#FF5252")
+                else Color.parseColor("#94A3B8")
+            )
+            b.txtDetalheStatus.visibility = View.VISIBLE
         } else {
-            b.btnDesbloquearRemovidos.visibility = View.GONE
+            b.txtDetalheStatus.visibility = View.GONE
         }
 
-        renderizarListaParticipantes(snap, ativo)
+        // Alterna entre o painel de sessão ao vivo e o card compacto de resumo
+        b.painelSessaoAtiva.visibility = if (ativo) View.VISIBLE else View.GONE
+        b.cardComoUsar.visibility = if (ativo) View.GONE else View.VISIBLE
+        b.btnGerarNovoCodigo.visibility = if (ativo) View.INVISIBLE else View.VISIBLE
+
+        if (ativo) {
+            b.txtMeuIpVirtual.text = snap.myVirtualIp
+            b.txtPingRota.text = if (snap.pingMs > 0) "${snap.pingMs} ms (${snap.routeMode})" else snap.routeMode
+            b.txtTrafego.text = formatarBytes(snap.txBytes + snap.rxBytes)
+            b.txtContadorSala.text = "${snap.totalPlayersInRoom} / ${snap.maxTotalPlayers}"
+            b.btnTestarPing.isEnabled = (snap.phase == GdroidLanVpnService.StatusPhase.ONLINE)
+
+            if (snap.isHost && snap.blockedCount > 0) {
+                b.btnDesbloquearRemovidos.visibility = View.VISIBLE
+                b.btnDesbloquearRemovidos.text = "Desbloquear (${snap.blockedCount})"
+            } else {
+                b.btnDesbloquearRemovidos.visibility = View.GONE
+            }
+
+            renderizarListaParticipantes(snap)
+        }
 
         b.edtCodigoAmigo.isEnabled = !ativo
         b.btnColarCodigoAmigo.isEnabled = !ativo
-        b.btnTestarPing.isEnabled = (snap.phase == GdroidLanVpnService.StatusPhase.ONLINE)
 
         if (ativo) {
-            b.btnAcaoPrincipal.text = if (snap.isHost) "ENCERRAR SERVIDOR LAN" else "DESCONECTAR DA SALA"
+            b.btnAcaoPrincipal.text = if (snap.isHost) "ENCERRAR SERVIDOR" else "SAIR DA SALA"
             b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF5252"))
             b.btnAcaoPrincipal.setTextColor(Color.WHITE)
         } else {
-            b.btnAcaoPrincipal.text = if (modoHostSelecionado) "INICIAR SERVIDOR LAN" else "CONECTAR NA SALA"
+            b.btnAcaoPrincipal.text = if (modoHostSelecionado) "INICIAR SERVIDOR" else "CONECTAR NA SALA"
             val cor = if (modoHostSelecionado) "#00E676" else "#00B8D4"
             b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
             b.btnAcaoPrincipal.setTextColor(Color.parseColor("#04140B"))
         }
     }
 
-    private fun renderizarListaParticipantes(snap: GdroidLanVpnService.TunnelSnapshot, ativo: Boolean) {
+    private fun renderizarListaParticipantes(snap: GdroidLanVpnService.TunnelSnapshot) {
         b.containerParticipantes.removeAllViews()
-        if (!ativo || snap.members.isEmpty()) {
+        if (snap.members.isEmpty()) {
             b.txtSemParticipantes.visibility = View.VISIBLE
-            b.txtSemParticipantes.text = if (ativo) {
-                "Sincronizando participantes da sala..."
-            } else {
-                "Nenhuma sessão ativa no momento."
-            }
+            b.txtSemParticipantes.text = "Sincronizando sala..."
             return
         }
 
@@ -483,7 +462,7 @@ class MainActivity : AppCompatActivity() {
 
             when {
                 membro.isHost -> {
-                    row.txtCargoParticipante.text = if (snap.isHost) "ANFITRIÃO (VOCÊ)" else "ANFITRIÃO"
+                    row.txtCargoParticipante.text = if (snap.isHost) "VOCÊ" else "HOST"
                     row.txtCargoParticipante.setTextColor(Color.parseColor("#00E676"))
                     row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600E676"))
                 }
@@ -493,14 +472,14 @@ class MainActivity : AppCompatActivity() {
                     row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600B8D4"))
                 }
                 else -> {
-                    row.txtCargoParticipante.text = "CONVIDADO"
+                    row.txtCargoParticipante.text = "JOGADOR"
                     row.txtCargoParticipante.setTextColor(Color.parseColor("#00B8D4"))
                     row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600B8D4"))
                 }
             }
 
             val pingInfo = when {
-                membro.isHost && snap.isHost -> "Servidor Principal"
+                membro.isHost && snap.isHost -> "Servidor"
                 membro.pingMs > 0 -> "${membro.pingMs} ms • ${membro.routeLabel}"
                 else -> membro.routeLabel
             }

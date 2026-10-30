@@ -10,7 +10,9 @@ object TunnelProtocol {
 
     const val HOST_NODE_ID = 1
     const val MIN_CLIENT_NODE_ID = 2
-    const val MAX_CLIENT_NODE_ID = 250
+    const val MAX_CLIENT_NODE_ID = 8 // Nós 1..8 = máximo de 8 jogadores na partida
+    const val MIN_TOTAL_PLAYERS = 2
+    const val MAX_TOTAL_PLAYERS = 8
     const val BROADCAST_NODE_ID = 255
     const val HOST_VIRTUAL_IP = "10.10.0.1"
     const val VPN_MTU = 1360
@@ -46,7 +48,7 @@ object TunnelProtocol {
     data class JoinAckData(
         val sessionId: Long,
         val assignedNodeId: Int,
-        val maxClients: Int,
+        val maxPlayers: Int,
         val hostName: String
     )
 
@@ -57,7 +59,7 @@ object TunnelProtocol {
     )
 
     data class RosterPayload(
-        val maxClients: Int,
+        val maxPlayers: Int,
         val members: List<RoomMemberInfo>
     )
 
@@ -75,7 +77,6 @@ object TunnelProtocol {
 
     fun parseJoinReq(plain: ByteArray): JoinRequestData? {
         if (plain.size < 2 || plain[0] != TYPE_JOIN_REQ) return null
-        // Compatibilidade caso receba formato binário antigo de 9 bytes
         if (plain.size == 9 && plain[1] != '{'.code.toByte()) {
             val sid = ByteBuffer.wrap(plain, 1, 8).long
             return JoinRequestData(sid, 0L, "Jogador")
@@ -95,13 +96,13 @@ object TunnelProtocol {
     fun buildJoinAck(
         sessionId: Long,
         assignedNodeId: Int,
-        maxClients: Int,
+        maxPlayers: Int,
         hostName: String
     ): ByteArray {
         val j = JSONObject().apply {
             put("sid", sessionId)
             put("node", assignedNodeId and 0xFF)
-            put("max", maxClients)
+            put("max", maxPlayers.coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS))
             put("hostName", hostName.take(24))
         }
         val jb = j.toString().toByteArray(Charsets.UTF_8)
@@ -115,7 +116,7 @@ object TunnelProtocol {
             JoinAckData(
                 sessionId = j.getLong("sid"),
                 assignedNodeId = j.getInt("node"),
-                maxClients = j.optInt("max", 8),
+                maxPlayers = j.optInt("max", MAX_TOTAL_PLAYERS).coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS),
                 hostName = j.optString("hostName", "Anfitrião").ifBlank { "Anfitrião" }
             )
         } catch (_: Exception) {
@@ -156,7 +157,7 @@ object TunnelProtocol {
         }
     }
 
-    fun buildRoster(maxClients: Int, members: List<RoomMemberInfo>): ByteArray {
+    fun buildRoster(maxPlayers: Int, members: List<RoomMemberInfo>): ByteArray {
         val arr = JSONArray()
         for (m in members) {
             arr.put(
@@ -170,7 +171,7 @@ object TunnelProtocol {
             )
         }
         val root = JSONObject().apply {
-            put("max", maxClients)
+            put("max", maxPlayers.coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS))
             put("members", arr)
         }
         val jb = root.toString().toByteArray(Charsets.UTF_8)
@@ -181,7 +182,7 @@ object TunnelProtocol {
         if (plain.size < 2 || plain[0] != TYPE_ROSTER) return null
         return try {
             val root = JSONObject(String(plain, 1, plain.size - 1, Charsets.UTF_8))
-            val max = root.optInt("max", 8)
+            val max = root.optInt("max", MAX_TOTAL_PLAYERS).coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS)
             val arr = root.optJSONArray("members") ?: JSONArray()
             val list = ArrayList<RoomMemberInfo>(arr.length())
             for (i in 0 until arr.length()) {

@@ -5,34 +5,23 @@
 <h1 align="center">GDroid LAN — Rede Virtual P2P para Multiplayer</h1>
 
 <p align="center">
-  <b>Conecte salas multiplayer do GDroid e jogos LAN à distância com criptografia ponta a ponta, controle de capacidade e gerenciamento de participantes em tempo real.</b>
+  <b>Conecte salas multiplayer do GDroid e jogos LAN à distância com criptografia ponta a ponta, limite ajustável de até 8 jogadores e moderação em tempo real.</b>
 </p>
 
 ---
 
-## Principais Recursos (v2.1)
+## Principais Recursos (v2.2)
 
-- **Conta Única por Instalação (Apenas Nome):** ao abrir pela primeira vez, o jogador informa somente o Nome (sem senha e sem login repetido). A conta é única por instalação e fica salva automaticamente apenas enquanto o aplicativo permanecer instalado (`allowBackup="false"`).
-- **Controle de Capacidade da Sala:** o anfitrião define exatamente quantos convidados podem entrar na partida (de 1 até 50 convidados por sala).
-- **Lista de Participantes em Tempo Real:** visualização ao vivo de todos os jogadores conectados na sala com nome, endereço IP virtual, latência (`ms`) e rota ativa.
-- **Moderação pelo Anfitrião:** remoção imediata de qualquer participante da sala (com opção de apenas desconectar ou bloquear na sessão atual).
-- **Split-Tunnel (`10.10.0.0/24`):** somente o tráfego da rede virtual `10.10.0.x` passa pelo túnel criptografado (`AES-128-GCM`), preservando a velocidade normal da internet do aparelho.
-- **Roteamento Híbrido Anti-CGNAT:** tentativa automática de conexão Direta P2P via UDP Hole-Punching (STUN RFC 5389) com contingência transparente via Ponte TLS.
+- **Conta Única por Instalação (Apenas Nome):** ao abrir pela primeira vez, o jogador informa somente o Nome (sem senha e sem login repetido). A conta fica salva automaticamente apenas enquanto o aplicativo permanecer instalado (`allowBackup="false"`).
+- **Limite Ajustável até 8 Jogadores (`-` / `+`):** controle direto pelos botões `-` e `+` de **2 até 8 jogadores** na partida.
+- **Interface Limpa e Organizada:** layout direto sem excesso de blocos; os painéis de **Jogadores na Sala** e **Rede Ativa** aparecem de forma contextual somente quando a sala está em uso.
+- **Lista de Jogadores e Moderação em Tempo Real:** exibe quem entrou na sala com opção imediata de **Remover** ou **Remover e Bloquear**.
+- **Split-Tunnel (`10.10.0.0/24`) + Anti-CGNAT:** somente o tráfego `10.10.0.x` passa pelo túnel criptografado (`AES-128-GCM`), combinando conexão Direta P2P (UDP Hole-Punching) e contingência automática via Ponte TLS.
 
 ---
 
-## Instruções de Uso
+## Como Usar
 
-### 1. Anfitrião da Partida (`Criar Servidor`)
-1. Na primeira abertura, informe seu Nome para criar a identificação única da instalação.
-2. Na aba **Criar Servidor**, ajuste o **Limite de Pessoas na Sala** e toque em **INICIAR SERVIDOR LAN**.
-3. Compartilhe o **Código da Sala** com os participantes.
-4. No **GDroid**, inicie o servidor normalmente. Seu IP virtual fixo é sempre **`10.10.0.1`**.
-
-### 2. Convidados (`Entrar na Sala`)
-1. Na primeira abertura, informe seu Nome.
-2. Na aba **Entrar na Sala**, informe o **Código da Sala** e toque em **CONECTAR NA SALA**.
-3. Após exibir **CONECTADO**, abra o **GDroid** e conecte no endereço IP:
-   ```text
-   10.10.0.1
-   ```
+1. **Anfitrião (`Criar Servidor`):** ajuste o limite de jogadores (`2` a `8`), toque em **INICIAR SERVIDOR** e envie o **Código da Sala**.
+2. **Convidados (`Entrar na Sala`):** informe o **Código da Sala** e toque em **CONECTAR NA SALA**.
+3. **No GDroid:** o anfitrião cria o mundo normalmente e todos os convidados conectam pelo IP fixo **`10.10.0.1`**.
