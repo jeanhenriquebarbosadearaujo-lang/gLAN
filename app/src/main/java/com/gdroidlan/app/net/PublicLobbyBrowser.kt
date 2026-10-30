@@ -72,7 +72,7 @@ class PublicLobbyBrowser(
         }
 
         val client = MqttLightClient(
-            socketProtector = { /* Fora da VPN ativa */ },
+            socketProtector = { true },
             onPacketReceived = { _, encrypted -> handleIncomingBeacon(encrypted) },
             onConnectionStateChanged = { connected, _ ->
                 brokerConnected = connected
