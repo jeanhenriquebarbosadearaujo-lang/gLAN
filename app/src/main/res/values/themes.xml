@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GDroidLAN" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/neon_emerald</item>
+        <item name="colorOnPrimary">#04140B</item>
+        <item name="colorSecondary">@color/neon_cyan</item>
+        <item name="android:statusBarColor">@color/bg_obsidian</item>
+        <item name="android:navigationBarColor">@color/bg_obsidian</item>
+        <item name="android:windowBackground">@color/bg_obsidian</item>
+    </style>
+</resources>
