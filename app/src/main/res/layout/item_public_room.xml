@@ -20,7 +20,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="10dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginEnd="6dp"
         android:layout_weight="1"
         android:orientation="vertical">
 
@@ -48,13 +48,27 @@
     </LinearLayout>
 
     <TextView
+        android:id="@+id/txtPingSalaPublica"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="6dp"
+        android:background="@color/surface_card"
+        android:fontFamily="monospace"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="4dp"
+        android:text="-- ms"
+        android:textColor="@color/text_secondary"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+    <TextView
         android:id="@+id/txtVagasSalaPublica"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="8dp"
         android:background="@color/surface_card"
         android:fontFamily="monospace"
-        android:paddingHorizontal="8dp"
+        android:paddingHorizontal="7dp"
         android:paddingVertical="4dp"
         android:text="1 / 8"
         android:textColor="@color/neon_cyan"
@@ -68,7 +82,7 @@
         android:insetTop="0dp"
         android:insetBottom="0dp"
         android:minWidth="0dp"
-        android:paddingHorizontal="14dp"
+        android:paddingHorizontal="12dp"
         android:text="Entrar"
         android:textColor="#FFFFFF"
         android:textSize="12sp"

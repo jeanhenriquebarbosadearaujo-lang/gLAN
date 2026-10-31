@@ -15,7 +15,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -28,6 +30,7 @@ import androidx.core.view.GravityCompat
 import com.gdroidlan.app.auth.AccountManagerStore
 import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.databinding.ActivityMainBinding
+import com.gdroidlan.app.databinding.DialogSettingsBinding
 import com.gdroidlan.app.databinding.ItemPeerRowBinding
 import com.gdroidlan.app.databinding.ItemPublicRoomBinding
 import com.gdroidlan.app.net.PublicLobbyBrowser
@@ -49,12 +52,17 @@ class MainActivity : AppCompatActivity() {
         private const val CREDITO_AUTOR = "Jean Henrique"
         private const val CREDITO_TIKTOK_HANDLE = ".memze"
         private const val CREDITO_TIKTOK_URL = "https://www.tiktok.com/@.memze"
+
+        private const val PREF_SHOW_TRAFFIC = "pref_show_traffic_stats"
+        private const val PREF_AUTO_PING_LOBBY = "pref_auto_ping_lobby"
+        private const val PREF_ROOM_ALERTS = "pref_room_join_leave_alerts"
     }
 
     private lateinit var b: ActivityMainBinding
     private val prefs by lazy { getSharedPreferences("gdroid_lan_prefs", Context.MODE_PRIVATE) }
     private val uiHandler = Handler(Looper.getMainLooper())
     private var toastAtual: Toast? = null
+    private var bindingConfiguracoesAberto: DialogSettingsBinding? = null
 
     private var contaAtiva: AccountManagerStore.UserAccount? = null
     private var abaSelecionada: AbaPrincipal = AbaPrincipal.SERVIDORES_PUBLICOS
@@ -62,6 +70,14 @@ class MainActivity : AppCompatActivity() {
     private var codigoHostAtual = ""
     private var limiteJogadores = TunnelProtocol.MAX_TOTAL_PLAYERS
     private var filtroPesquisaServidor = ""
+
+    private var prefMostrarTrafego = true
+    private var prefPingLobby = true
+    private var prefAvisosSala = true
+
+    private var ultimoTotalBytes = 0L
+    private var ultimoTimestampBytesMs = 0L
+    private var ultimaTaxaBytesPorSeg = 0L
 
     private var aguardandoPermissaoParaHost = true
     private var codigoPendenteConexao = ""
@@ -189,6 +205,11 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
+        prefMostrarTrafego = prefs.getBoolean(PREF_SHOW_TRAFFIC, true)
+        prefPingLobby = prefs.getBoolean(PREF_AUTO_PING_LOBBY, true)
+        prefAvisosSala = prefs.getBoolean(PREF_ROOM_ALERTS, true)
+        lobbyBrowser.setAutoPingEnabled(prefPingLobby)
+
         val versaoInstalada = obterVersaoInstalada()
         b.txtVersaoTopo.text = "v$versaoInstalada"
         b.txtVersaoMenu.text = "v$versaoInstalada"
@@ -250,7 +271,7 @@ class MainActivity : AppCompatActivity() {
 
         GdroidLanVpnService.onModerationEventToast = { msg ->
             runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
+                if (!isFinishing && !isDestroyed && prefAvisosSala) {
                     toast(msg)
                 }
             }
@@ -264,6 +285,11 @@ class MainActivity : AppCompatActivity() {
         dispararTickerCooldown()
     }
 
+    override fun onResume() {
+        super.onResume()
+        bindingConfiguracoesAberto?.let { atualizarStatusBateriaNoDialogo(it) }
+    }
+
     override fun onStop() {
         lobbyBrowser.stop()
         if (verificandoSala) {
@@ -274,6 +300,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        bindingConfiguracoesAberto = null
         uiHandler.removeCallbacksAndMessages(null)
         toastAtual?.cancel()
         super.onDestroy()
@@ -282,9 +309,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "2.8"
+            pInfo.versionName ?: "2.9"
         } catch (_: Exception) {
-            "2.8"
+            "2.9"
         }
     }
 
@@ -293,6 +320,13 @@ class MainActivity : AppCompatActivity() {
             action = acao
             putExtra(GdroidLanVpnService.EXTRA_CALLER_TOKEN, GdroidLanVpnService.INTERNAL_CALLER_TOKEN)
         }
+    }
+
+    private fun corPorPing(pingMs: Long): Int = when {
+        pingMs <= 0L -> Color.parseColor("#94A3B8")
+        pingMs <= 80L -> Color.parseColor("#00E676")
+        pingMs <= 170L -> Color.parseColor("#FFCA28")
+        else -> Color.parseColor("#FF5252")
     }
 
     // =========================================================================
@@ -310,11 +344,7 @@ class MainActivity : AppCompatActivity() {
 
         b.btnMenuConfiguracoes.setOnClickListener {
             b.drawerPrincipal.closeDrawer(GravityCompat.END)
-            MaterialAlertDialogBuilder(this)
-                .setTitle("Configurações")
-                .setMessage("Futura atualização")
-                .setPositiveButton("OK", null)
-                .show()
+            mostrarDialogoConfiguracoes()
         }
 
         b.btnMenuPrivacidade.setOnClickListener {
@@ -331,6 +361,84 @@ class MainActivity : AppCompatActivity() {
             b.drawerPrincipal.closeDrawer(GravityCompat.END)
             mostrarDialogoCreditos(versao)
         }
+    }
+
+    private fun estaSemRestricaoBateria(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun atualizarStatusBateriaNoDialogo(cfg: DialogSettingsBinding) {
+        if (estaSemRestricaoBateria()) {
+            cfg.txtStatusBateriaConfig.text = "Status atual: Sem restrição de bateria (Ativo)"
+            cfg.txtStatusBateriaConfig.setTextColor(Color.parseColor("#00E676"))
+            cfg.btnAbrirAjusteBateria.text = "Revisar Ajuste de Bateria"
+        } else {
+            cfg.txtStatusBateriaConfig.text = "Status atual: Economia de bateria ativa"
+            cfg.txtStatusBateriaConfig.setTextColor(Color.parseColor("#FFCA28"))
+            cfg.btnAbrirAjusteBateria.text = "Desativar Restrição de Bateria"
+        }
+    }
+
+    private fun abrirAjustesDeBateriaDoSistema() {
+        val intentsTentativa = listOf(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", packageName, null)
+            },
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        )
+        for (intent in intentsTentativa) {
+            try {
+                startActivity(intent)
+                toast("Em Bateria, selecione 'Sem restrições' para manter o gLAN ativo.")
+                return
+            } catch (_: Exception) { }
+        }
+        toast("Abra as Configurações do Android > Aplicativos > gLAN > Bateria.")
+    }
+
+    private fun mostrarDialogoConfiguracoes() {
+        val cfg = DialogSettingsBinding.inflate(layoutInflater)
+        bindingConfiguracoesAberto = cfg
+
+        atualizarStatusBateriaNoDialogo(cfg)
+        cfg.switchMostrarTrafego.isChecked = prefMostrarTrafego
+        cfg.switchPingLobby.isChecked = prefPingLobby
+        cfg.switchAvisosSala.isChecked = prefAvisosSala
+
+        cfg.btnAbrirAjusteBateria.setOnClickListener {
+            abrirAjustesDeBateriaDoSistema()
+        }
+
+        cfg.switchMostrarTrafego.setOnCheckedChangeListener { _, isChecked ->
+            prefMostrarTrafego = isChecked
+            prefs.edit().putBoolean(PREF_SHOW_TRAFFIC, isChecked).apply()
+            b.cardEstatisticasRede.visibility = if (isChecked) View.VISIBLE else View.GONE
+        }
+
+        cfg.switchPingLobby.setOnCheckedChangeListener { _, isChecked ->
+            prefPingLobby = isChecked
+            prefs.edit().putBoolean(PREF_AUTO_PING_LOBBY, isChecked).apply()
+            lobbyBrowser.setAutoPingEnabled(isChecked)
+            renderizarSalasPublicas(cacheSalasPublicas, cacheDiretorioConectado)
+        }
+
+        cfg.switchAvisosSala.setOnCheckedChangeListener { _, isChecked ->
+            prefAvisosSala = isChecked
+            prefs.edit().putBoolean(PREF_ROOM_ALERTS, isChecked).apply()
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Configurações")
+            .setView(cfg.root)
+            .setPositiveButton("Concluir", null)
+            .setOnDismissListener {
+                if (bindingConfiguracoesAberto === cfg) {
+                    bindingConfiguracoesAberto = null
+                }
+            }
+            .show()
     }
 
     private fun mostrarDialogoPrivacidade() {
@@ -359,7 +467,7 @@ class MainActivity : AppCompatActivity() {
             "O gLAN é uma ferramenta de rede virtual P2P criada para facilitar partidas multiplayer em estilo LAN entre amigos e na lista de servidores públicos.\n\n" +
             "2. Regras de Uso e Convivência\n" +
             "Ao criar ou entrar em Salas Públicas, você concorda em não utilizar nomes ou títulos ofensivos e em não tentar sobrecarregar, fraudar ou prejudicar a conexão de outros usuários. " +
-            "O anfitrião de cada sala possui autonomia para remover ou bloquear participantes da sua sessão.\n\n" +
+            "O anfitrião de cada sala possui autonomia para expulsar ou bloquear participantes da sua sessão.\n\n" +
             "3. Segurança e Responsabilidade\n" +
             "Mantenha códigos de Salas Privadas apenas com pessoas de confiança. " +
             "O aplicativo é disponibilizado de forma gratuita no estado em que se encontra, sem vínculo oficial com marcas ou jogos de terceiros."
@@ -473,6 +581,7 @@ class MainActivity : AppCompatActivity() {
         if (isSessaoAtiva(snap)) {
             lobbyBrowser.stop()
         } else {
+            lobbyBrowser.setAutoPingEnabled(prefPingLobby)
             lobbyBrowser.start()
         }
     }
@@ -823,11 +932,7 @@ class MainActivity : AppCompatActivity() {
         b.btnDesbloquearRemovidos.setOnClickListener {
             val agora = SystemClock.elapsedRealtime()
             if (segundosRestantes(cooldownDesbloquearAteMs, agora) > 0) return@setOnClickListener
-            cooldownDesbloquearAteMs = agora + 3_000L
-            dispararTickerCooldown()
-
-            startService(criarIntentServicoAutenticado(GdroidLanVpnService.ACTION_CLEAR_BLOCKS))
-            toast("Lista de bloqueios da sala limpa.")
+            mostrarDialogoBloqueados(GdroidLanVpnService.currentSnapshot)
         }
 
         b.btnTestarPing.setOnClickListener {
@@ -839,6 +944,26 @@ class MainActivity : AppCompatActivity() {
             startService(criarIntentServicoAutenticado(GdroidLanVpnService.ACTION_MANUAL_PING))
             toast("Testando latência da sala...")
         }
+    }
+
+    private fun mostrarDialogoBloqueados(snap: GdroidLanVpnService.TunnelSnapshot) {
+        val nomes = if (snap.blockedNames.isNotEmpty()) {
+            snap.blockedNames.joinToString("\n") { "• $it" }
+        } else {
+            "${snap.blockedCount} jogador(es) bloqueado(s) nesta sessão."
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Jogadores Bloqueados na Sala")
+            .setMessage("Bloqueados atualmente:\n$nomes\n\nDeseja liberar a entrada novamente nesta sessão?")
+            .setPositiveButton("Desbloquear Todos") { _, _ ->
+                cooldownDesbloquearAteMs = SystemClock.elapsedRealtime() + 3_000L
+                dispararTickerCooldown()
+                startService(criarIntentServicoAutenticado(GdroidLanVpnService.ACTION_CLEAR_BLOCKS))
+                toast("Bloqueios da sala removidos.")
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     private fun verificarExistenciaEEntrar(codigoNormalizado: String) {
@@ -879,7 +1004,7 @@ class MainActivity : AppCompatActivity() {
                         iniciarCooldownPrincipal(3)
                         exibirErroSalaLocal(
                             badge = "BLOQUEADO",
-                            mensagem = "Você foi bloqueado nesta sala pelo anfitrião."
+                            mensagem = "Você foi expulso e bloqueado nesta sala pelo anfitrião."
                         )
                     }
                     is PublicLobbyBrowser.ProbeResult.Offline -> {
@@ -954,13 +1079,27 @@ class MainActivity : AppCompatActivity() {
             item.txtSubtituloSalaPublica.text = "Host: ${sala.hostName} • IP: ${TunnelProtocol.HOST_VIRTUAL_IP}"
             item.txtVagasSalaPublica.text = "${sala.currentPlayers} / ${sala.maxPlayers}"
 
+            if (prefPingLobby) {
+                item.txtPingSalaPublica.visibility = View.VISIBLE
+                if (sala.pingMs > 0L) {
+                    item.txtPingSalaPublica.text = "${sala.pingMs} ms"
+                    item.txtPingSalaPublica.setTextColor(corPorPing(sala.pingMs))
+                } else {
+                    item.txtPingSalaPublica.text = "-- ms"
+                    item.txtPingSalaPublica.setTextColor(Color.parseColor("#94A3B8"))
+                }
+            } else {
+                item.txtPingSalaPublica.visibility = View.GONE
+            }
+
             if (sala.isFull) {
                 item.viewDotSala.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FFCA28"))
                 item.btnEntrarSalaPublica.text = "Lotada"
                 item.btnEntrarSalaPublica.isEnabled = false
                 item.btnEntrarSalaPublica.alpha = 0.5f
             } else {
-                item.viewDotSala.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00E676"))
+                val corDot = if (prefPingLobby && sala.pingMs > 0L) corPorPing(sala.pingMs) else Color.parseColor("#00E676")
+                item.viewDotSala.backgroundTintList = ColorStateList.valueOf(corDot)
                 item.btnEntrarSalaPublica.text = "Entrar"
                 item.btnEntrarSalaPublica.isEnabled = !bloqueadoPorCooldownOuBusca
                 item.btnEntrarSalaPublica.alpha = if (bloqueadoPorCooldownOuBusca) 0.45f else 1.0f
@@ -987,6 +1126,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun dispararServicoVpn(asHost: Boolean, code: String) {
         lobbyBrowser.stop()
+        ultimoTotalBytes = 0L
+        ultimoTimestampBytesMs = 0L
+        ultimaTaxaBytesPorSeg = 0L
+
         val conta = contaAtiva
         val acao = if (asHost) GdroidLanVpnService.ACTION_START_HOST else GdroidLanVpnService.ACTION_START_CLIENT
         val i = criarIntentServicoAutenticado(acao).apply {
@@ -1000,19 +1143,19 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.startForegroundService(this, i)
     }
 
-    private fun confirmarRemocaoParticipante(
+    private fun confirmarExpulsaoParticipante(
         membro: TunnelProtocol.RoomMemberInfo,
         botaoLinha: MaterialButton
     ) {
         MaterialAlertDialogBuilder(this)
-            .setTitle("Remover da Sala")
-            .setMessage("Como deseja desconectar ${membro.displayName} (${membro.virtualIp})?")
-            .setPositiveButton("Remover e Bloquear") { _, _ ->
+            .setTitle("Expulsar Jogador")
+            .setMessage("Deseja expulsar ${membro.displayName} (${membro.virtualIp}) desta sala?")
+            .setPositiveButton("Expulsar e Bloquear") { _, _ ->
                 botaoLinha.isEnabled = false
                 botaoLinha.alpha = 0.4f
                 enviarComandoKick(membro.nodeId, bloquearSessao = true)
             }
-            .setNeutralButton("Apenas Remover") { _, _ ->
+            .setNeutralButton("Apenas Expulsar") { _, _ ->
                 botaoLinha.isEnabled = false
                 botaoLinha.alpha = 0.4f
                 enviarComandoKick(membro.nodeId, bloquearSessao = false)
@@ -1084,10 +1227,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun calcularTextoTrafego(totalBytes: Long): String {
+        val agoraMs = SystemClock.elapsedRealtime()
+        if (ultimoTimestampBytesMs > 0L && totalBytes >= ultimoTotalBytes) {
+            val dtMs = agoraMs - ultimoTimestampBytesMs
+            if (dtMs >= 600L) {
+                ultimaTaxaBytesPorSeg = ((totalBytes - ultimoTotalBytes) * 1000L) / dtMs
+                ultimoTotalBytes = totalBytes
+                ultimoTimestampBytesMs = agoraMs
+            }
+        } else {
+            ultimoTotalBytes = totalBytes
+            ultimoTimestampBytesMs = agoraMs
+            ultimaTaxaBytesPorSeg = 0L
+        }
+
+        val totalFmt = formatarBytes(totalBytes)
+        return if (ultimaTaxaBytesPorSeg >= 1024L) {
+            "$totalFmt (${ultimaTaxaBytesPorSeg / 1024L} KB/s)"
+        } else {
+            totalFmt
+        }
+    }
+
     private fun renderizarEstado(snap: GdroidLanVpnService.TunnelSnapshot) {
         val ativo = isSessaoAtiva(snap)
         if (ativo) {
             limparErroVerificacaoLocal()
+        } else {
+            ultimoTotalBytes = 0L
+            ultimoTimestampBytesMs = 0L
+            ultimaTaxaBytesPorSeg = 0L
         }
 
         gerenciarLobbyBrowserConformeEstado(snap)
@@ -1160,13 +1330,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         b.painelSessaoAtiva.visibility = if (ativo) View.VISIBLE else View.GONE
+        b.cardEstatisticasRede.visibility = if (ativo && prefMostrarTrafego) View.VISIBLE else View.GONE
         b.cardComoUsar.visibility = if (ativo) View.GONE else View.VISIBLE
         b.btnGerarNovoCodigo.visibility = if (ativo) View.INVISIBLE else View.VISIBLE
 
         if (ativo) {
             b.txtMeuIpVirtual.text = snap.myVirtualIp
-            b.txtPingRota.text = if (snap.pingMs > 0) "${snap.pingMs} ms (${snap.routeMode})" else snap.routeMode
-            b.txtTrafego.text = formatarBytes(snap.txBytes + snap.rxBytes)
+            if (snap.pingMs > 0L) {
+                b.txtPingRota.text = "${snap.pingMs} ms (${snap.routeMode})"
+                b.txtPingRota.setTextColor(corPorPing(snap.pingMs))
+            } else {
+                b.txtPingRota.text = snap.routeMode
+                b.txtPingRota.setTextColor(Color.parseColor("#00D4FF"))
+            }
+            b.txtTrafego.text = calcularTextoTrafego(snap.txBytes + snap.rxBytes)
             b.txtContadorSala.text = "${snap.totalPlayersInRoom} / ${snap.maxTotalPlayers}"
             if (segundosRestantes(cooldownPingAteMs) == 0) {
                 b.btnTestarPing.isEnabled = (snap.phase == GdroidLanVpnService.StatusPhase.ONLINE)
@@ -1175,7 +1352,7 @@ class MainActivity : AppCompatActivity() {
 
             if (snap.isHost && snap.blockedCount > 0) {
                 b.btnDesbloquearRemovidos.visibility = View.VISIBLE
-                b.btnDesbloquearRemovidos.text = "Desbloquear (${snap.blockedCount})"
+                b.btnDesbloquearRemovidos.text = "Bloqueados (${snap.blockedCount})"
             } else {
                 b.btnDesbloquearRemovidos.visibility = View.GONE
             }
@@ -1224,17 +1401,32 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            val pingInfo = when {
-                membro.isHost && snap.isHost -> "Servidor"
-                membro.pingMs > 0 -> "${membro.pingMs} ms • ${membro.routeLabel}"
-                else -> membro.routeLabel
+            val rotaExibida = if (membro.isHost && snap.isHost) "Servidor" else membro.routeLabel
+            row.txtInfoRedeParticipante.text = "${membro.virtualIp} • $rotaExibida"
+
+            when {
+                membro.isHost && snap.isHost -> {
+                    row.txtPingParticipante.text = "0 ms"
+                    row.txtPingParticipante.setTextColor(Color.parseColor("#00E676"))
+                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00E676"))
+                }
+                membro.pingMs > 0L -> {
+                    val cor = corPorPing(membro.pingMs)
+                    row.txtPingParticipante.text = "${membro.pingMs} ms"
+                    row.txtPingParticipante.setTextColor(cor)
+                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(cor)
+                }
+                else -> {
+                    row.txtPingParticipante.text = "-- ms"
+                    row.txtPingParticipante.setTextColor(Color.parseColor("#94A3B8"))
+                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00E676"))
+                }
             }
-            row.txtInfoRedeParticipante.text = "${membro.virtualIp} • $pingInfo"
 
             if (snap.isHost && !membro.isHost) {
                 row.btnRemoverParticipante.visibility = View.VISIBLE
                 row.btnRemoverParticipante.setOnClickListener {
-                    confirmarRemocaoParticipante(membro, row.btnRemoverParticipante)
+                    confirmarExpulsaoParticipante(membro, row.btnRemoverParticipante)
                 }
             } else {
                 row.btnRemoverParticipante.visibility = View.GONE

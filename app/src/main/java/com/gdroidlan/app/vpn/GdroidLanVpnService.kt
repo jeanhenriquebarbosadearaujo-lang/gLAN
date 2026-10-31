@@ -59,6 +59,7 @@ class GdroidLanVpnService : VpnService() {
         val totalPlayersInRoom: Int = 0,
         val maxTotalPlayers: Int = TunnelProtocol.MAX_TOTAL_PLAYERS,
         val blockedCount: Int = 0,
+        val blockedNames: List<String> = emptyList(),
         val members: List<TunnelProtocol.RoomMemberInfo> = emptyList(),
         val txBytes: Long = 0L,
         val rxBytes: Long = 0L
@@ -102,15 +103,11 @@ class GdroidLanVpnService : VpnService() {
         const val EXTRA_TARGET_NODE_ID = "target_node_id"
         const val EXTRA_BLOCK_SESSION = "block_session"
 
-        /**
-         * Token aleatório em memória gerado por execução do processo para impedir
-         * que aplicativos externos forjem Intents de controle para o VpnService.
-         */
         val INTERNAL_CALLER_TOKEN: String = UUID.randomUUID().toString()
 
         private const val CHANNEL_ID = "gdroid_lan_vpn_channel"
         private const val NOTIF_ID = 4101
-        private const val MAX_HANDSHAKE_PACKETS_PER_SEC = 14
+        private const val MAX_HANDSHAKE_PACKETS_PER_SEC = 18
 
         @Volatile
         var currentSnapshot: TunnelSnapshot = TunnelSnapshot()
@@ -147,7 +144,6 @@ class GdroidLanVpnService : VpnService() {
     private val tunWriteLock = Any()
     private val rng = SecureRandom()
 
-    // Limitador de taxa anti-flood para PROBE_REQ / JOIN_REQ no Anfitrião
     private val handshakeWindowSec = AtomicLong(0L)
     private val handshakeCountInSec = AtomicInteger(0)
 
@@ -183,6 +179,7 @@ class GdroidLanVpnService : VpnService() {
     private val sessionToNode = ConcurrentHashMap<Long, Int>()
     private val blockedSessions = ConcurrentHashMap.newKeySet<Long>()
     private val blockedAccountUids = ConcurrentHashMap.newKeySet<Long>()
+    private val blockedPlayerNames = ConcurrentHashMap<String, String>()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
@@ -190,7 +187,6 @@ class GdroidLanVpnService : VpnService() {
             return START_NOT_STICKY
         }
 
-        // Verifica autenticidade interna do comando
         val token = intent.getStringExtra(EXTRA_CALLER_TOKEN)
         if (token != INTERNAL_CALLER_TOKEN) {
             return START_NOT_STICKY
@@ -227,6 +223,7 @@ class GdroidLanVpnService : VpnService() {
             ACTION_CLEAR_BLOCKS -> {
                 blockedSessions.clear()
                 blockedAccountUids.clear()
+                blockedPlayerNames.clear()
                 if (sessionRunning.get()) {
                     refreshSnapshotUi()
                 }
@@ -234,7 +231,6 @@ class GdroidLanVpnService : VpnService() {
             }
 
             ACTION_START_HOST, ACTION_START_CLIENT -> {
-                // Em Android 8+, startForeground precisa ser chamado imediatamente após startForegroundService
                 startForegroundSafe("Inicializando túnel seguro...")
 
                 val rawCode = intent.getStringExtra(EXTRA_ROOM_CODE).orEmpty()
@@ -313,6 +309,7 @@ class GdroidLanVpnService : VpnService() {
         sessionToNode.clear()
         blockedSessions.clear()
         blockedAccountUids.clear()
+        blockedPlayerNames.clear()
         remoteRosterCache = emptyList()
         txBytesTotal.set(0L)
         rxBytesTotal.set(0L)
@@ -426,7 +423,7 @@ class GdroidLanVpnService : VpnService() {
     }
 
     // =========================================================================
-    // MODERAÇÃO E LISTA DE PARTICIPANTES
+    // MODERAÇÃO (EXPULSAR / BLOQUEAR) E LISTA DE PARTICIPANTES
     // =========================================================================
 
     private fun kickPeerFromServer(targetNode: Int, blockInSession: Boolean) {
@@ -437,24 +434,47 @@ class GdroidLanVpnService : VpnService() {
             if (peer.accountUid != 0L) {
                 blockedAccountUids.add(peer.accountUid)
             }
+            val blockKey = if (peer.accountUid != 0L) "uid:${peer.accountUid}" else "sid:${peer.sessionId}"
+            blockedPlayerNames[blockKey] = peer.displayName
         }
 
         val reason = if (blockInSession) {
-            "Você foi removido e bloqueado desta sala pelo anfitrião."
+            "Você foi expulso e bloqueado desta sala pelo anfitrião."
         } else {
-            "Você foi removido da sala pelo anfitrião."
+            "Você foi expulso da sala pelo anfitrião."
         }
 
         val kickPlain = TunnelProtocol.buildKick(peer.sessionId, targetNode, reason)
         val kickPairwise = peer.pairwiseCipher.encrypt(TunnelProtocol.HOST_NODE_ID, kickPlain)
+
+        val signedKickEnc = sessionIdentity?.let { hostId ->
+            roomCipher?.encrypt(
+                TunnelProtocol.buildSignedKick(
+                    hostIdentity = hostId,
+                    sessionId = peer.sessionId,
+                    targetNodeId = targetNode,
+                    targetAccountUid = peer.accountUid,
+                    reason = reason
+                )
+            )
+        }
+
         repeat(3) {
             peer.activeDirectEndpoint?.let { ep -> sendUdpRaw(kickPairwise, ep) }
             mqttClient?.publish("$topicRoot/h2c/pkt/$targetNode", kickPairwise)
+            if (it < 2 && signedKickEnc != null) {
+                mqttClient?.publish("$topicRoot/h2c/ctl", signedKickEnc)
+            }
         }
 
         broadcastRosterFromHost()
         refreshSnapshotUi()
-        onModerationEventToast?.invoke("${peer.displayName} foi removido da sala.")
+        val msgHost = if (blockInSession) {
+            "${peer.displayName} foi expulso e bloqueado da sala."
+        } else {
+            "${peer.displayName} foi expulso da sala."
+        }
+        onModerationEventToast?.invoke(msgHost)
     }
 
     private fun buildHostMembersList(now: Long = System.currentTimeMillis()): List<TunnelProtocol.RoomMemberInfo> {
@@ -632,7 +652,6 @@ class GdroidLanVpnService : VpnService() {
             }
 
             else -> {
-                // Canal de sinalização de sala (apenas frames pré-sessão / broadcast assinados)
                 if (viaUdpFrom != null) return
                 val plain = roomCipher?.decrypt(encrypted) ?: return
                 handleRoomBroadcastFrame(plain)
@@ -679,14 +698,13 @@ class GdroidLanVpnService : VpnService() {
                     val rej = roomCipher?.encrypt(
                         TunnelProtocol.buildJoinReject(
                             req.sessionId,
-                            "Entrada recusada: sua conta foi removida desta sala pelo anfitrião."
+                            "Entrada recusada: você foi expulso e bloqueado desta sala pelo anfitrião."
                         )
                     ) ?: return
                     mqttClient?.publish("$topicRoot/h2c/ctl", rej)
                     return
                 }
 
-                // Se a mesma conta (accountUid) reconectar após queda rápida, reaproveita seu próprio slot sem duplicar
                 val existingBySession = sessionToNode[req.sessionId]?.takeIf { peersByNode[it]?.isAlive(now) == true }
                 val existingByUid = if (existingBySession == null && req.accountUid != 0L) {
                     peersByNode.values.firstOrNull { it.accountUid == req.accountUid }?.nodeId
@@ -749,6 +767,7 @@ class GdroidLanVpnService : VpnService() {
                 mqttClient?.publish("$topicRoot/h2c/ctl", ackEnc)
 
                 broadcastMyCandidates()
+                sendImmediatePingToPeers()
                 broadcastRosterFromHost()
                 refreshSnapshotUi()
 
@@ -766,7 +785,6 @@ class GdroidLanVpnService : VpnService() {
                 if (ack.sessionId != clientSessionId) return
                 if (ack.assignedNodeId !in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID) return
 
-                // Se já fixou a chave do Anfitrião nesta sessão, exige que seja a mesma chave
                 val currentPinned = pinnedHostPubKey
                 if (currentPinned != null && !currentPinned.encoded.contentEquals(hostPub.encoded)) {
                     return
@@ -811,6 +829,17 @@ class GdroidLanVpnService : VpnService() {
                 val rej = TunnelProtocol.parseRejectOrKick(plain) ?: return
                 if (rej.sessionId == clientSessionId) {
                     failAndStop(rej.reason)
+                }
+            }
+
+            TunnelProtocol.TYPE_KICK -> {
+                if (isHostRole) return
+                val kick = TunnelProtocol.parseAndVerifySignedKick(plain, pinnedHostPubKey) ?: return
+                val matchesMe = kick.sessionId == clientSessionId ||
+                    (myAccountUid != 0L && kick.targetAccountUid == myAccountUid) ||
+                    (myNodeId > 0 && kick.targetNodeId == myNodeId)
+                if (matchesMe) {
+                    failAndStop(kick.reason)
                 }
             }
 
@@ -962,6 +991,7 @@ class GdroidLanVpnService : VpnService() {
                         sessionToNode.remove(removed.sessionId)
                         broadcastRosterFromHost()
                         refreshSnapshotUi()
+                        onModerationEventToast?.invoke("${removed.displayName} saiu da sala.")
                     }
                 } else if (senderNode == TunnelProtocol.HOST_NODE_ID) {
                     failAndStop("O anfitrião encerrou a sala $activeRoomCode.")
@@ -1191,7 +1221,13 @@ class GdroidLanVpnService : VpnService() {
                 routeLabel = if (anyDirect) "P2P" else "Ponte TLS"
                 detail = "Conectado na sala de $hostDisplayNameOnClient. Entre no IP 10.10.0.1 no GDroid."
                 membersList = if (remoteRosterCache.isNotEmpty()) {
-                    remoteRosterCache
+                    remoteRosterCache.map { m ->
+                        when {
+                            m.isHost -> m.copy(pingMs = bestPing, routeLabel = routeLabel)
+                            m.nodeId == myNodeId -> m.copy(pingMs = bestPing, routeLabel = "Você")
+                            else -> m
+                        }
+                    }
                 } else {
                     listOf(
                         TunnelProtocol.RoomMemberInfo(
@@ -1211,7 +1247,7 @@ class GdroidLanVpnService : VpnService() {
                             displayName = myDisplayName,
                             virtualIp = myIp,
                             isHost = false,
-                            pingMs = 0L,
+                            pingMs = bestPing,
                             routeLabel = "Você"
                         )
                     )
@@ -1225,6 +1261,8 @@ class GdroidLanVpnService : VpnService() {
         }
 
         val totalInRoom = membersList.size.coerceAtLeast(if (isHostRole) 1 else 0)
+        val blockedNamesSorted = blockedPlayerNames.values.sorted()
+        val totalBlocked = maxOf(blockedSessions.size, blockedNamesSorted.size)
 
         publishState(
             TunnelSnapshot(
@@ -1241,7 +1279,8 @@ class GdroidLanVpnService : VpnService() {
                 pingMs = bestPing,
                 totalPlayersInRoom = totalInRoom,
                 maxTotalPlayers = maxTotalPlayers,
-                blockedCount = blockedSessions.size,
+                blockedCount = totalBlocked,
+                blockedNames = blockedNamesSorted,
                 members = membersList,
                 txBytes = txBytesTotal.get(),
                 rxBytes = rxBytesTotal.get()

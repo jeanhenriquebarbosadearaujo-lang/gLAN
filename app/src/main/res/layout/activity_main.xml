@@ -67,7 +67,7 @@
                             android:fontFamily="monospace"
                             android:paddingHorizontal="6dp"
                             android:paddingVertical="2dp"
-                            android:text="v2.8"
+                            android:text="v2.9"
                             android:textColor="@color/neon_cyan"
                             android:textSize="10sp"
                             android:textStyle="bold" />
@@ -855,6 +855,7 @@
                 </com.google.android.material.card.MaterialCardView>
 
                 <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardEstatisticasRede"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
@@ -1068,7 +1069,7 @@
                         android:fontFamily="monospace"
                         android:paddingHorizontal="6dp"
                         android:paddingVertical="2dp"
-                        android:text="v2.8"
+                        android:text="v2.9"
                         android:textColor="@color/neon_cyan"
                         android:textSize="10sp"
                         android:textStyle="bold" />
@@ -1186,7 +1187,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="TikTok: .memze • Versão 2.8"
+            android:text="TikTok: .memze • Versão 2.9"
             android:textColor="@color/neon_cyan"
             android:textSize="11sp" />
 

@@ -75,6 +75,7 @@ object TunnelProtocol {
     data class RejectOrKickData(
         val sessionId: Long,
         val targetNodeId: Int,
+        val targetAccountUid: Long = 0L,
         val reason: String
     )
 
@@ -111,6 +112,14 @@ object TunnelProtocol {
 
     private fun hostByeSignPayload(ts: Long): ByteArray =
         "v26|hostbye|$ts".toByteArray(Charsets.UTF_8)
+
+    private fun kickSignPayload(
+        sessionId: Long,
+        node: Int,
+        accountUid: Long,
+        reason: String,
+        ts: Long
+    ): ByteArray = "v29|kick|$sessionId|$node|$accountUid|$reason|$ts".toByteArray(Charsets.UTF_8)
 
     fun buildJoinReq(
         sessionId: Long,
@@ -224,6 +233,66 @@ object TunnelProtocol {
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_KICK).put(jb).array()
     }
 
+    fun buildSignedKick(
+        hostIdentity: RoomCrypto.IdentityKeyBox,
+        sessionId: Long,
+        targetNodeId: Int,
+        targetAccountUid: Long,
+        reason: String
+    ): ByteArray {
+        val node = targetNodeId and 0xFF
+        val cleanReason = RoomCrypto.cleanSafeText(reason, 120).ifBlank {
+            "Você foi expulso da sala pelo anfitrião."
+        }
+        val ts = System.currentTimeMillis()
+        val sig = hostIdentity.signToBase64(
+            kickSignPayload(sessionId, node, targetAccountUid, cleanReason, ts)
+        )
+        val j = JSONObject().apply {
+            put("sid", sessionId)
+            put("node", node)
+            put("uid", targetAccountUid)
+            put("reason", cleanReason)
+            put("ts", ts)
+            put("sig", sig)
+        }
+        val jb = j.toString().toByteArray(Charsets.UTF_8)
+        return ByteBuffer.allocate(1 + jb.size).put(TYPE_KICK).put(jb).array()
+    }
+
+    fun parseAndVerifySignedKick(plain: ByteArray, hostPubKey: PublicKey?): RejectOrKickData? {
+        if (hostPubKey == null || plain.size < 2 || plain[0] != TYPE_KICK) return null
+        return try {
+            val j = JSONObject(String(plain, 1, plain.size - 1, Charsets.UTF_8))
+            val ts = j.optLong("ts", 0L)
+            if (ts <= 0L || abs(System.currentTimeMillis() - ts) > MAX_SIGN_SKEW_MS) return null
+            val sid = j.optLong("sid", 0L)
+            val node = j.optInt("node", 0)
+            val uid = j.optLong("uid", 0L)
+            val reason = RoomCrypto.cleanSafeText(
+                j.optString("reason", "Você foi expulso da sala pelo anfitrião."),
+                120
+            ).ifBlank { "Você foi expulso da sala pelo anfitrião." }
+            val sig = j.optString("sig", "")
+            if (!RoomCrypto.verifySignature(
+                    hostPubKey,
+                    kickSignPayload(sid, node, uid, reason, ts),
+                    sig
+                )
+            ) {
+                return null
+            }
+            RejectOrKickData(
+                sessionId = sid,
+                targetNodeId = node,
+                targetAccountUid = uid,
+                reason = reason
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun parseRejectOrKick(plain: ByteArray): RejectOrKickData? {
         if (plain.size < 2) return null
         return try {
@@ -231,6 +300,7 @@ object TunnelProtocol {
             RejectOrKickData(
                 sessionId = j.optLong("sid", 0L),
                 targetNodeId = j.optInt("node", 0),
+                targetAccountUid = j.optLong("uid", 0L),
                 reason = RoomCrypto.cleanSafeText(
                     j.optString("reason", "Conexão encerrada pelo anfitrião."),
                     120
@@ -483,7 +553,6 @@ object TunnelProtocol {
         val fragOffset = flagsAndFrag and 0x1FFF
         val proto = pkt[offset + 9].toInt() and 0xFF
 
-        // Somente o primeiro fragmento (fragOffset == 0) carrega portas TCP (6) / UDP (17)
         if (fragOffset == 0 && (proto == 6 || proto == 17)) {
             if (hdrLen + 4 > len) return false
             val srcPort = ((pkt[offset + hdrLen].toInt() and 0xFF) shl 8) or
@@ -523,11 +592,6 @@ object TunnelProtocol {
         return -1
     }
 
-    /**
-     * Valida pacote IPv4 recebido pelo túnel antes de injetar na interface tun0:
-     * impede IP Spoofing (exige que o IP de origem interno seja exatamente 10.10.0.<senderNode>)
-     * e aplica o firewall de portas sensíveis do sistema.
-     */
     fun validateIncomingTunnelIpv4(
         pkt: ByteArray,
         offset: Int,

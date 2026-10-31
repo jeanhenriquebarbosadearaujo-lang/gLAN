@@ -20,6 +20,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="10dp"
+        android:layout_marginEnd="6dp"
         android:layout_weight="1"
         android:orientation="vertical">
 
@@ -33,6 +34,9 @@
                 android:id="@+id/txtNomeParticipante"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:maxWidth="135dp"
                 android:text="Jogador"
                 android:textColor="@color/text_primary"
                 android:textSize="14sp"
@@ -42,11 +46,11 @@
                 android:id="@+id/txtCargoParticipante"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:background="#2600B8D4"
                 android:paddingHorizontal="6dp"
                 android:paddingVertical="2dp"
-                android:text="CONVIDADO"
+                android:text="JOGADOR"
                 android:textColor="@color/neon_cyan"
                 android:textSize="9sp"
                 android:textStyle="bold" />
@@ -58,26 +62,42 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:fontFamily="monospace"
-            android:text="10.10.0.2 • 24 ms • Direto P2P"
+            android:text="10.10.0.2 • P2P"
             android:textColor="@color/text_secondary"
             android:textSize="11sp" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/txtPingParticipante"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="6dp"
+        android:background="@color/surface_card"
+        android:fontFamily="monospace"
+        android:paddingHorizontal="7dp"
+        android:paddingVertical="4dp"
+        android:text="24 ms"
+        android:textColor="@color/neon_cyan"
+        android:textSize="10sp"
+        android:textStyle="bold" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnRemoverParticipante"
         style="?attr/materialButtonOutlinedStyle"
         android:layout_width="wrap_content"
-        android:layout_height="36dp"
+        android:layout_height="34dp"
         android:insetTop="0dp"
         android:insetBottom="0dp"
         android:minWidth="0dp"
         android:paddingHorizontal="10dp"
-        android:text="Remover"
+        android:text="Expulsar"
         android:textColor="@color/danger_red"
         android:textSize="11sp"
+        android:textStyle="bold"
+        app:cornerRadius="8dp"
         app:icon="@drawable/ic_person_remove"
         app:iconPadding="4dp"
-        app:iconSize="14dp"
+        app:iconSize="13dp"
         app:iconTint="@color/danger_red"
         app:strokeColor="#66FF5252" />
 
