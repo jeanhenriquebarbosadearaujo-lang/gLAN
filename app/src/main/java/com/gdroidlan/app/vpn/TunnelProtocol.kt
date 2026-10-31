@@ -1,6 +1,8 @@
 package com.gdroidlan.app.vpn
 
 import com.gdroidlan.app.crypto.RoomCrypto
+import com.gdroidlan.app.update.OfficialVersionCert
+import com.gdroidlan.app.update.UpdateNotifier
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.Inet4Address
@@ -132,6 +134,11 @@ object TunnelProtocol {
             put("uid", accountUid)
             put("name", RoomCrypto.cleanSafeText(displayName, 24).ifBlank { "Jogador" })
             put("cpub", clientPubKeyB64)
+            UpdateNotifier.getBuiltInVerifiedRelease()?.let { rel ->
+                put("vCode", rel.versionCode)
+                put("vName", rel.versionName)
+                put("vSig", rel.signatureB64)
+            }
         }
         val jb = j.toString().toByteArray(Charsets.UTF_8)
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_JOIN_REQ).put(jb).array()
@@ -143,6 +150,12 @@ object TunnelProtocol {
             val j = JSONObject(String(plain, 1, plain.size - 1, Charsets.UTF_8))
             val cpub = j.optString("cpub", "").trim()
             if (cpub.isBlank()) return null
+            val vCode = j.optInt("vCode", 0)
+            if (vCode > 0) {
+                UpdateNotifier.verifyFields(vCode, j.optString("vName", ""), j.optString("vSig", ""))?.let { rel ->
+                    UpdateNotifier.onVerifiedReleaseObserved(rel, OfficialVersionCert.BUILT_VERSION_CODE)
+                }
+            }
             JoinRequestData(
                 sessionId = j.getLong("sid"),
                 accountUid = j.optLong("uid", 0L),
@@ -175,6 +188,11 @@ object TunnelProtocol {
             put("hostName", cleanHost)
             put("hpub", hostIdentity.publicKeyBase64)
             put("sig", sig)
+            UpdateNotifier.getBuiltInVerifiedRelease()?.let { rel ->
+                put("vCode", rel.versionCode)
+                put("vName", rel.versionName)
+                put("vSig", rel.signatureB64)
+            }
         }
         val jb = j.toString().toByteArray(Charsets.UTF_8)
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_JOIN_ACK).put(jb).array()
@@ -199,6 +217,13 @@ object TunnelProtocol {
                 )
             ) {
                 return null
+            }
+
+            val vCode = j.optInt("vCode", 0)
+            if (vCode > 0) {
+                UpdateNotifier.verifyFields(vCode, j.optString("vName", ""), j.optString("vSig", ""))?.let { rel ->
+                    UpdateNotifier.onVerifiedReleaseObserved(rel, OfficialVersionCert.BUILT_VERSION_CODE)
+                }
             }
 
             JoinAckData(

@@ -67,7 +67,7 @@
                             android:fontFamily="monospace"
                             android:paddingHorizontal="6dp"
                             android:paddingVertical="2dp"
-                            android:text="v2.9"
+                            android:text="v3.0"
                             android:textColor="@color/neon_cyan"
                             android:textSize="10sp"
                             android:textStyle="bold" />
@@ -126,6 +126,46 @@
                     app:iconTint="@color/text_primary"
                     app:strokeColor="@color/stroke_subtle" />
             </LinearLayout>
+
+            <!-- AVISO AUTOMÁTICO DE NOVA VERSÃO (EXIBIDO SOMENTE QUANDO HÁ ATUALIZAÇÃO OFICIAL) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardAvisoAtualizacao"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/surface_elevated"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/warning_amber"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="12dp">
+
+                    <TextView
+                        android:id="@+id/txtTituloAvisoAtualizacao"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="ATUALIZAÇÃO DISPONÍVEL"
+                        android:textColor="@color/warning_amber"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txtCorpoAvisoAtualizacao"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:text="Uma nova versão oficial do gLAN está disponível. Atualize para manter compatibilidade total nas salas."
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <!-- TRÊS OPÇÕES PRINCIPAIS: SERVIDORES PÚBLICOS | ENTRAR NA SALA | CRIAR SERVIDOR -->
             <com.google.android.material.button.MaterialButtonToggleGroup
@@ -1069,7 +1109,7 @@
                         android:fontFamily="monospace"
                         android:paddingHorizontal="6dp"
                         android:paddingVertical="2dp"
-                        android:text="v2.9"
+                        android:text="v3.0"
                         android:textColor="@color/neon_cyan"
                         android:textSize="10sp"
                         android:textStyle="bold" />
@@ -1187,7 +1227,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="TikTok: .memze • Versão 2.9"
+            android:text="TikTok: .memze • Versão 3.0"
             android:textColor="@color/neon_cyan"
             android:textSize="11sp" />
 

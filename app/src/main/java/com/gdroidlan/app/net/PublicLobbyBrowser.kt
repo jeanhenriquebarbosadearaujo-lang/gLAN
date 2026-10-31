@@ -2,6 +2,8 @@ package com.gdroidlan.app.net
 
 import android.os.SystemClock
 import com.gdroidlan.app.crypto.RoomCrypto
+import com.gdroidlan.app.update.OfficialVersionCert
+import com.gdroidlan.app.update.UpdateNotifier
 import com.gdroidlan.app.vpn.TunnelProtocol
 import org.json.JSONObject
 import java.security.SecureRandom
@@ -22,6 +24,7 @@ import kotlin.math.abs
  * - Verifica em ~150ms–2.2s se uma sala realmente existe antes de ativar a VPN.
  */
 class PublicLobbyBrowser(
+    private val installedVersionCode: Int = OfficialVersionCert.BUILT_VERSION_CODE,
     private val onRoomsUpdated: (List<PublicRoomEntry>, Boolean) -> Unit
 ) {
 
@@ -92,6 +95,11 @@ class PublicLobbyBrowser(
                 put("ts", ts)
                 put("pub", identity.publicKeyBase64)
                 put("sig", sig)
+                UpdateNotifier.getBuiltInVerifiedRelease()?.let { rel ->
+                    put("vCode", rel.versionCode)
+                    put("vName", rel.versionName)
+                    put("vSig", rel.signatureB64)
+                }
             }
             return lobbyCipher.encrypt(json.toString().toByteArray(Charsets.UTF_8))
         }
@@ -159,15 +167,21 @@ class PublicLobbyBrowser(
         val client = MqttLightClient(
             socketProtector = { true },
             onPacketReceived = { topic, encrypted ->
-                if (topic == LOBBY_TOPIC) {
-                    handleIncomingBeacon(encrypted)
-                } else {
-                    val listeners = topicListeners[topic]
-                    if (listeners != null) {
-                        for (fn in listeners) {
-                            try {
-                                fn(encrypted)
-                            } catch (_: Exception) { }
+                when (topic) {
+                    LOBBY_TOPIC -> handleIncomingBeacon(encrypted)
+                    UpdateNotifier.VERSION_TOPIC -> {
+                        UpdateNotifier.parseEncryptedAnnouncement(encrypted)?.let { rel ->
+                            UpdateNotifier.onVerifiedReleaseObserved(rel, installedVersionCode)
+                        }
+                    }
+                    else -> {
+                        val listeners = topicListeners[topic]
+                        if (listeners != null) {
+                            for (fn in listeners) {
+                                try {
+                                    fn(encrypted)
+                                } catch (_: Exception) { }
+                            }
                         }
                     }
                 }
@@ -175,10 +189,13 @@ class PublicLobbyBrowser(
             onConnectionStateChanged = { connected, _ ->
                 brokerConnected = connected
                 if (active.get()) dispatchSnapshot()
+                if (connected) {
+                    scheduleSelfRetainedVersionPublishIfNewest()
+                }
             }
         )
         mqtt = client
-        client.start(listOf(LOBBY_TOPIC))
+        client.start(listOf(LOBBY_TOPIC, UpdateNotifier.VERSION_TOPIC))
 
         Thread({
             while (active.get()) {
@@ -451,6 +468,22 @@ class PublicLobbyBrowser(
         }
     }
 
+    private fun scheduleSelfRetainedVersionPublishIfNewest() {
+        val myRel = UpdateNotifier.getBuiltInVerifiedRelease() ?: return
+        Thread({
+            try {
+                Thread.sleep(1_600L)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+            if (!active.get() || !brokerConnected) return@Thread
+            if (UpdateNotifier.shouldPublishSelfRetainedRefresh(myRel)) {
+                val pkt = UpdateNotifier.buildEncryptedAnnouncement(myRel)
+                mqtt?.publish(UpdateNotifier.VERSION_TOPIC, pkt, retain = true)
+            }
+        }, "glan-ver-refresh").apply { isDaemon = true }.start()
+    }
+
     private fun handleIncomingBeacon(encrypted: ByteArray) {
         if (!active.get()) return
         val plain = lobbyCipher.decrypt(encrypted) ?: return
@@ -497,6 +530,13 @@ class PublicLobbyBrowser(
                 )
             ) {
                 return
+            }
+
+            val vCode = j.optInt("vCode", 0)
+            if (vCode > 0) {
+                UpdateNotifier.verifyFields(vCode, j.optString("vName", ""), j.optString("vSig", ""))?.let { rel ->
+                    UpdateNotifier.onVerifiedReleaseObserved(rel, installedVersionCode)
+                }
             }
 
             val cachedPing = if (autoPingEnabled) (pingCacheByCode[code] ?: existing?.pingMs ?: -1L) else -1L

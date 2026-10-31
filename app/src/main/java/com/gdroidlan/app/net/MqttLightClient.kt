@@ -109,13 +109,13 @@ class MqttLightClient(
         }
     }
 
-    fun publish(topic: String, payload: ByteArray): Boolean {
+    fun publish(topic: String, payload: ByteArray, retain: Boolean = false): Boolean {
         if (!connected.get() || payload.size > MAX_MQTT_FRAME_BYTES) return false
         return try {
             val topicBytes = topic.toByteArray(Charsets.UTF_8)
             val bodyLen = 2 + topicBytes.size + payload.size
             val frame = ByteArrayOutputStream(5 + bodyLen)
-            frame.write(0x30) // PUBLISH QoS 0
+            frame.write(if (retain) 0x31 else 0x30) // PUBLISH QoS 0 (+ RETAIN opcional)
             writeVarLen(frame, bodyLen)
             frame.write((topicBytes.size ushr 8) and 0xFF)
             frame.write(topicBytes.size and 0xFF)

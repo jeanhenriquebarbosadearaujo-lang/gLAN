@@ -34,6 +34,8 @@ import com.gdroidlan.app.databinding.DialogSettingsBinding
 import com.gdroidlan.app.databinding.ItemPeerRowBinding
 import com.gdroidlan.app.databinding.ItemPublicRoomBinding
 import com.gdroidlan.app.net.PublicLobbyBrowser
+import com.gdroidlan.app.update.OfficialVersionCert
+import com.gdroidlan.app.update.UpdateNotifier
 import com.gdroidlan.app.vpn.GdroidLanVpnService
 import com.gdroidlan.app.vpn.TunnelProtocol
 import com.google.android.material.button.MaterialButton
@@ -94,6 +96,7 @@ class MainActivity : AppCompatActivity() {
     private var cooldownLobbyRefreshAteMs = 0L
     private var cooldownDesbloquearAteMs = 0L
     private var ultimoToqueAbaMs = 0L
+    private var ultimoCodigoAvisoPopup = 0
 
     private val tickerCooldownRunnable = object : Runnable {
         override fun run() {
@@ -159,13 +162,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val lobbyBrowser by lazy {
-        PublicLobbyBrowser { salas, conectado ->
+        PublicLobbyBrowser(installedVersionCode = obterVersionCodeInstalado()) { salas, conectado ->
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
                     cacheSalasPublicas = salas
                     cacheDiretorioConectado = conectado
                     renderizarSalasPublicas(salas, conectado)
                 }
+            }
+        }
+    }
+
+    private val updateListener: (UpdateNotifier.VerifiedRelease) -> Unit = { novaVersao ->
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                mostrarAvisoNovaVersao(novaVersao)
             }
         }
     }
@@ -281,6 +292,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         GdroidLanVpnService.addListener(stateListener)
+        UpdateNotifier.addListener(updateListener)
         gerenciarLobbyBrowserConformeEstado(GdroidLanVpnService.currentSnapshot)
         dispararTickerCooldown()
     }
@@ -295,6 +307,7 @@ class MainActivity : AppCompatActivity() {
         if (verificandoSala) {
             verificandoSala = false
         }
+        UpdateNotifier.removeListener(updateListener)
         GdroidLanVpnService.removeListener(stateListener)
         super.onStop()
     }
@@ -309,9 +322,47 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "2.9"
+            pInfo.versionName ?: "3.0"
         } catch (_: Exception) {
-            "2.9"
+            "3.0"
+        }
+    }
+
+    private fun obterVersionCodeInstalado(): Int {
+        return try {
+            val pInfo = packageManager.getPackageInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pInfo.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode
+            }
+        } catch (_: Exception) {
+            OfficialVersionCert.BUILT_VERSION_CODE
+        }
+    }
+
+    private fun mostrarAvisoNovaVersao(novaVersao: UpdateNotifier.VerifiedRelease) {
+        if (novaVersao.versionCode <= obterVersionCodeInstalado()) return
+        val versaoAtual = obterVersaoInstalada()
+
+        b.txtTituloAvisoAtualizacao.text = "ATUALIZAÇÃO DISPONÍVEL • v${novaVersao.versionName}"
+        b.txtCorpoAvisoAtualizacao.text =
+            "Você está usando a versão v$versaoAtual. Atualize o gLAN para a versão v${novaVersao.versionName} para manter todos os recursos e compatibilidade nas salas."
+        b.cardAvisoAtualizacao.visibility = View.VISIBLE
+
+        if (ultimoCodigoAvisoPopup < novaVersao.versionCode) {
+            ultimoCodigoAvisoPopup = novaVersao.versionCode
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Atualização Disponível (v${novaVersao.versionName})")
+                .setMessage(
+                    "Uma nova versão oficial do gLAN já foi lançada.\n\n" +
+                    "Sua versão instalada: v$versaoAtual\n" +
+                    "Versão atual: v${novaVersao.versionName}\n\n" +
+                    "Atualize seu aplicativo para continuar com todos os recursos mais recentes."
+                )
+                .setPositiveButton("Entendi", null)
+                .show()
         }
     }
 

@@ -19,6 +19,8 @@ import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.net.MqttLightClient
 import com.gdroidlan.app.net.PublicLobbyBrowser
 import com.gdroidlan.app.net.StunClient
+import com.gdroidlan.app.update.OfficialVersionCert
+import com.gdroidlan.app.update.UpdateNotifier
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
@@ -361,16 +363,25 @@ class GdroidLanVpnService : VpnService() {
                 }
 
                 val initialTopics = if (asHost) {
-                    listOf("$topicRoot/c2h/ctl", "$topicRoot/c2h/pkt")
+                    listOf("$topicRoot/c2h/ctl", "$topicRoot/c2h/pkt", UpdateNotifier.VERSION_TOPIC)
                 } else {
-                    listOf("$topicRoot/h2c/ctl")
+                    listOf("$topicRoot/h2c/ctl", UpdateNotifier.VERSION_TOPIC)
                 }
 
                 val mqtt = MqttLightClient(
                     socketProtector = { sock -> protect(sock) },
-                    onPacketReceived = { _, encrypted ->
+                    onPacketReceived = { topic, encrypted ->
                         if (sessionGeneration.get() == gen && sessionRunning.get()) {
-                            handleEncryptedNetworkPacket(encrypted, viaUdpFrom = null)
+                            if (topic == UpdateNotifier.VERSION_TOPIC) {
+                                UpdateNotifier.parseEncryptedAnnouncement(encrypted)?.let { rel ->
+                                    UpdateNotifier.onVerifiedReleaseObserved(
+                                        rel,
+                                        OfficialVersionCert.BUILT_VERSION_CODE
+                                    )
+                                }
+                            } else {
+                                handleEncryptedNetworkPacket(encrypted, viaUdpFrom = null)
+                            }
                         }
                     },
                     onConnectionStateChanged = { isConn, _ ->
