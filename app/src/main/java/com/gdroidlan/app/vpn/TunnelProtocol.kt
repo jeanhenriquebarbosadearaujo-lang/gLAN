@@ -1,10 +1,14 @@
 package com.gdroidlan.app.vpn
 
+import com.gdroidlan.app.crypto.RoomCrypto
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
+import java.security.PublicKey
+import kotlin.math.abs
 
 object TunnelProtocol {
 
@@ -34,6 +38,13 @@ object TunnelProtocol {
     const val PROBE_STATUS_FULL = 1
     const val PROBE_STATUS_BLOCKED = 2
 
+    private const val MAX_SIGN_SKEW_MS = 180_000L
+
+    // Portas sensíveis do sistema Android bloqueadas no firewall interno da rede virtual
+    private val BLOCKED_SYSTEM_PORTS = setOf(
+        21, 22, 23, 135, 137, 138, 139, 445, 5037, 5555, 5556, 8022
+    )
+
     data class RoomMemberInfo(
         val nodeId: Int,
         val sessionId: Long,
@@ -48,14 +59,17 @@ object TunnelProtocol {
     data class JoinRequestData(
         val sessionId: Long,
         val accountUid: Long,
-        val displayName: String
+        val displayName: String,
+        val clientPubKeyB64: String
     )
 
     data class JoinAckData(
         val sessionId: Long,
         val assignedNodeId: Int,
         val maxPlayers: Int,
-        val hostName: String
+        val hostName: String,
+        val hostPubKeyB64: String,
+        val signatureB64: String
     )
 
     data class RejectOrKickData(
@@ -83,11 +97,32 @@ object TunnelProtocol {
 
     fun nodeIp(nodeId: Int): String = "10.10.0.${nodeId and 0xFF}"
 
-    fun buildJoinReq(sessionId: Long, accountUid: Long, displayName: String): ByteArray {
+    private fun joinAckSignPayload(
+        sessionId: Long,
+        assignedNodeId: Int,
+        maxPlayers: Int,
+        hostName: String,
+        clientPubKeyB64: String
+    ): ByteArray = "v26|ack|$sessionId|$assignedNodeId|$maxPlayers|$hostName|$clientPubKeyB64"
+        .toByteArray(Charsets.UTF_8)
+
+    private fun rosterSignPayload(maxPlayers: Int, ts: Long, arrJson: String): ByteArray =
+        "v26|roster|$maxPlayers|$ts|$arrJson".toByteArray(Charsets.UTF_8)
+
+    private fun hostByeSignPayload(ts: Long): ByteArray =
+        "v26|hostbye|$ts".toByteArray(Charsets.UTF_8)
+
+    fun buildJoinReq(
+        sessionId: Long,
+        accountUid: Long,
+        displayName: String,
+        clientPubKeyB64: String
+    ): ByteArray {
         val j = JSONObject().apply {
             put("sid", sessionId)
             put("uid", accountUid)
-            put("name", displayName.take(24))
+            put("name", RoomCrypto.cleanSafeText(displayName, 24).ifBlank { "Jogador" })
+            put("cpub", clientPubKeyB64)
         }
         val jb = j.toString().toByteArray(Charsets.UTF_8)
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_JOIN_REQ).put(jb).array()
@@ -95,16 +130,15 @@ object TunnelProtocol {
 
     fun parseJoinReq(plain: ByteArray): JoinRequestData? {
         if (plain.size < 2 || plain[0] != TYPE_JOIN_REQ) return null
-        if (plain.size == 9 && plain[1] != '{'.code.toByte()) {
-            val sid = ByteBuffer.wrap(plain, 1, 8).long
-            return JoinRequestData(sid, 0L, "Jogador")
-        }
         return try {
             val j = JSONObject(String(plain, 1, plain.size - 1, Charsets.UTF_8))
+            val cpub = j.optString("cpub", "").trim()
+            if (cpub.isBlank()) return null
             JoinRequestData(
                 sessionId = j.getLong("sid"),
                 accountUid = j.optLong("uid", 0L),
-                displayName = j.optString("name", "Jogador").trim().ifBlank { "Jogador" }.take(24)
+                displayName = RoomCrypto.cleanSafeText(j.optString("name", ""), 24).ifBlank { "Jogador" },
+                clientPubKeyB64 = cpub
             )
         } catch (_: Exception) {
             null
@@ -112,31 +146,60 @@ object TunnelProtocol {
     }
 
     fun buildJoinAck(
+        hostIdentity: RoomCrypto.IdentityKeyBox,
         sessionId: Long,
         assignedNodeId: Int,
         maxPlayers: Int,
-        hostName: String
+        hostName: String,
+        clientPubKeyB64: String
     ): ByteArray {
+        val cleanHost = RoomCrypto.cleanSafeText(hostName, 24).ifBlank { "Anfitrião" }
+        val max = maxPlayers.coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS)
+        val node = assignedNodeId and 0xFF
+        val sig = hostIdentity.signToBase64(
+            joinAckSignPayload(sessionId, node, max, cleanHost, clientPubKeyB64)
+        )
         val j = JSONObject().apply {
             put("sid", sessionId)
-            put("node", assignedNodeId and 0xFF)
-            put("max", maxPlayers.coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS))
-            put("hostName", hostName.take(24))
+            put("node", node)
+            put("max", max)
+            put("hostName", cleanHost)
+            put("hpub", hostIdentity.publicKeyBase64)
+            put("sig", sig)
         }
         val jb = j.toString().toByteArray(Charsets.UTF_8)
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_JOIN_ACK).put(jb).array()
     }
 
-    fun parseJoinAck(plain: ByteArray): JoinAckData? {
+    fun parseAndVerifyJoinAck(plain: ByteArray, expectedClientPubB64: String): Pair<JoinAckData, PublicKey>? {
         if (plain.size < 2 || plain[0] != TYPE_JOIN_ACK) return null
         return try {
             val j = JSONObject(String(plain, 1, plain.size - 1, Charsets.UTF_8))
+            val sid = j.getLong("sid")
+            val node = j.getInt("node")
+            val max = j.optInt("max", MAX_TOTAL_PLAYERS).coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS)
+            val hostName = RoomCrypto.cleanSafeText(j.optString("hostName", ""), 24).ifBlank { "Anfitrião" }
+            val hpubB64 = j.optString("hpub", "")
+            val sigB64 = j.optString("sig", "")
+            val hostPub = RoomCrypto.decodeEcPublicKey(hpubB64) ?: return null
+
+            if (!RoomCrypto.verifySignature(
+                    hostPub,
+                    joinAckSignPayload(sid, node, max, hostName, expectedClientPubB64),
+                    sigB64
+                )
+            ) {
+                return null
+            }
+
             JoinAckData(
-                sessionId = j.getLong("sid"),
-                assignedNodeId = j.getInt("node"),
-                maxPlayers = j.optInt("max", MAX_TOTAL_PLAYERS).coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS),
-                hostName = j.optString("hostName", "Anfitrião").ifBlank { "Anfitrião" }
-            )
+                sessionId = sid,
+                assignedNodeId = node,
+                maxPlayers = max,
+                hostName = hostName,
+                hostPubKeyB64 = hpubB64,
+                signatureB64 = sigB64
+            ) to hostPub
         } catch (_: Exception) {
             null
         }
@@ -145,7 +208,7 @@ object TunnelProtocol {
     fun buildJoinReject(sessionId: Long, reason: String): ByteArray {
         val j = JSONObject().apply {
             put("sid", sessionId)
-            put("reason", reason)
+            put("reason", RoomCrypto.cleanSafeText(reason, 120))
         }
         val jb = j.toString().toByteArray(Charsets.UTF_8)
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_JOIN_REJECT).put(jb).array()
@@ -155,7 +218,7 @@ object TunnelProtocol {
         val j = JSONObject().apply {
             put("sid", sessionId)
             put("node", targetNodeId and 0xFF)
-            put("reason", reason)
+            put("reason", RoomCrypto.cleanSafeText(reason, 120))
         }
         val jb = j.toString().toByteArray(Charsets.UTF_8)
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_KICK).put(jb).array()
@@ -168,55 +231,80 @@ object TunnelProtocol {
             RejectOrKickData(
                 sessionId = j.optLong("sid", 0L),
                 targetNodeId = j.optInt("node", 0),
-                reason = j.optString("reason", "Conexão encerrada pelo anfitrião.")
+                reason = RoomCrypto.cleanSafeText(
+                    j.optString("reason", "Conexão encerrada pelo anfitrião."),
+                    120
+                ).ifBlank { "Conexão encerrada pelo anfitrião." }
             )
         } catch (_: Exception) {
             null
         }
     }
 
-    fun buildRoster(maxPlayers: Int, members: List<RoomMemberInfo>): ByteArray {
+    fun buildRoster(
+        hostIdentity: RoomCrypto.IdentityKeyBox,
+        maxPlayers: Int,
+        members: List<RoomMemberInfo>
+    ): ByteArray {
         val arr = JSONArray()
         for (m in members) {
             arr.put(
                 JSONObject().apply {
                     put("node", m.nodeId)
-                    put("name", m.displayName.take(24))
+                    put("name", RoomCrypto.cleanSafeText(m.displayName, 24).ifBlank { "Jogador" })
                     put("host", m.isHost)
                     put("ping", m.pingMs)
-                    put("route", m.routeLabel)
+                    put("route", RoomCrypto.cleanSafeText(m.routeLabel, 16))
                 }
             )
         }
+        val max = maxPlayers.coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS)
+        val ts = System.currentTimeMillis()
+        val arrStr = arr.toString()
+        val sig = hostIdentity.signToBase64(rosterSignPayload(max, ts, arrStr))
+
         val root = JSONObject().apply {
-            put("max", maxPlayers.coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS))
+            put("max", max)
+            put("ts", ts)
             put("members", arr)
+            put("pub", hostIdentity.publicKeyBase64)
+            put("sig", sig)
         }
         val jb = root.toString().toByteArray(Charsets.UTF_8)
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_ROSTER).put(jb).array()
     }
 
-    fun parseRoster(plain: ByteArray): RosterPayload? {
+    fun parseRoster(plain: ByteArray, expectedHostKey: PublicKey?): RosterPayload? {
         if (plain.size < 2 || plain[0] != TYPE_ROSTER) return null
         return try {
+            val now = System.currentTimeMillis()
             val root = JSONObject(String(plain, 1, plain.size - 1, Charsets.UTF_8))
             val max = root.optInt("max", MAX_TOTAL_PLAYERS).coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS)
-            val arr = root.optJSONArray("members") ?: JSONArray()
+            val ts = root.optLong("ts", 0L)
+            if (ts <= 0L || abs(now - ts) > MAX_SIGN_SKEW_MS) return null
+
+            val arr = root.optJSONArray("members") ?: return null
+            val sigB64 = root.optString("sig", "")
+            val verifyKey = expectedHostKey ?: RoomCrypto.decodeEcPublicKey(root.optString("pub", "")) ?: return null
+            if (!RoomCrypto.verifySignature(verifyKey, rosterSignPayload(max, ts, arr.toString()), sigB64)) {
+                return null
+            }
+
             val list = ArrayList<RoomMemberInfo>(arr.length())
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val nId = o.optInt("node", 0)
-                if (nId <= 0) continue
+                if (nId !in HOST_NODE_ID..MAX_CLIENT_NODE_ID) continue
                 list.add(
                     RoomMemberInfo(
                         nodeId = nId,
                         sessionId = 0L,
                         accountUid = 0L,
-                        displayName = o.optString("name", "Jogador"),
+                        displayName = RoomCrypto.cleanSafeText(o.optString("name", ""), 24).ifBlank { "Jogador" },
                         virtualIp = nodeIp(nId),
                         isHost = o.optBoolean("host", nId == HOST_NODE_ID),
                         pingMs = o.optLong("ping", -1L),
-                        routeLabel = o.optString("route", "Ativo")
+                        routeLabel = RoomCrypto.cleanSafeText(o.optString("route", "Ativo"), 16)
                     )
                 )
             }
@@ -248,20 +336,36 @@ object TunnelProtocol {
             .array()
     }
 
+    private fun isSafePeerEndpoint(ipStr: String, port: Int): InetSocketAddress? {
+        if (ipStr.isBlank() || port !in 1024..65535 || port in BLOCKED_SYSTEM_PORTS) return null
+        return try {
+            val addr = InetAddress.getByName(ipStr)
+            if (addr !is Inet4Address) return null
+            if (addr.isLoopbackAddress || addr.isAnyLocalAddress ||
+                addr.isLinkLocalAddress || addr.isMulticastAddress
+            ) {
+                return null
+            }
+            val b = addr.address
+            val b0 = b[0].toInt() and 0xFF
+            val b1 = b[1].toInt() and 0xFF
+            val b2 = b[2].toInt() and 0xFF
+            val b3 = b[3].toInt() and 0xFF
+            // Bloqueia broadcast e a sub-rede virtual 10.10.0.0/24 como endpoint físico UDP
+            if (b3 == 255 || (b0 == 10 && b1 == 10 && b2 == 0)) return null
+            InetSocketAddress(addr, port)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun parseCandidatesEndpoints(jsonBytes: ByteArray): List<InetSocketAddress> {
         val out = ArrayList<InetSocketAddress>(2)
         try {
             val j = JSONObject(String(jsonBytes, Charsets.UTF_8))
-            val locIp = j.optString("locIp", "")
-            val locPort = j.optInt("locPort", 0)
-            if (locIp.isNotBlank() && locPort in 1..65535) {
-                out.add(InetSocketAddress(InetAddress.getByName(locIp), locPort))
-            }
-            val pubIp = j.optString("pubIp", "")
-            val pubPort = j.optInt("pubPort", 0)
-            if (pubIp.isNotBlank() && pubPort in 1..65535) {
-                val addr = InetSocketAddress(InetAddress.getByName(pubIp), pubPort)
-                if (addr !in out) out.add(addr)
+            isSafePeerEndpoint(j.optString("locIp", ""), j.optInt("locPort", 0))?.let { out.add(it) }
+            isSafePeerEndpoint(j.optString("pubIp", ""), j.optInt("pubPort", 0))?.let { pub ->
+                if (pub !in out) out.add(pub)
             }
         } catch (_: Exception) { }
         return out
@@ -294,8 +398,37 @@ object TunnelProtocol {
         return out
     }
 
-    fun buildBye(senderNodeId: Int): ByteArray =
+    fun buildClientBye(senderNodeId: Int): ByteArray =
         byteArrayOf(TYPE_BYE, (senderNodeId and 0xFF).toByte())
+
+    fun buildSignedHostBye(hostIdentity: RoomCrypto.IdentityKeyBox): ByteArray {
+        val ts = System.currentTimeMillis()
+        val sig = hostIdentity.signToBase64(hostByeSignPayload(ts))
+        val j = JSONObject().apply {
+            put("ts", ts)
+            put("sig", sig)
+        }
+        val jb = j.toString().toByteArray(Charsets.UTF_8)
+        return ByteBuffer.allocate(2 + jb.size)
+            .put(TYPE_BYE)
+            .put(HOST_NODE_ID.toByte())
+            .put(jb)
+            .array()
+    }
+
+    fun verifySignedHostBye(plain: ByteArray, hostPubKey: PublicKey?): Boolean {
+        if (hostPubKey == null || plain.size < 3 || plain[0] != TYPE_BYE) return false
+        if ((plain[1].toInt() and 0xFF) != HOST_NODE_ID) return false
+        return try {
+            val j = JSONObject(String(plain, 2, plain.size - 2, Charsets.UTF_8))
+            val ts = j.optLong("ts", 0L)
+            if (ts <= 0L || abs(System.currentTimeMillis() - ts) > MAX_SIGN_SKEW_MS) return false
+            val sig = j.optString("sig", "")
+            RoomCrypto.verifySignature(hostPubKey, hostByeSignPayload(ts), sig)
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     fun buildProbeReq(probeId: Long, accountUid: Long): ByteArray {
         return ByteBuffer.allocate(17)
@@ -333,10 +466,45 @@ object TunnelProtocol {
         return ProbeAckData(probeId, status, cur, max)
     }
 
-    fun inspectOutgoingIpv4Target(pkt: ByteArray, len: Int): Int {
-        if (len < 20) return -1
-        val version = (pkt[0].toInt() ushr 4) and 0x0F
-        if (version != 4) return -1
+    /**
+     * Verifica cabeçalho IPv4 e bloqueia portas sensíveis do sistema (ADB, SSH, SMB, Telnet).
+     */
+    private fun passesPortFirewall(pkt: ByteArray, offset: Int, len: Int): Boolean {
+        if (len < 20 || offset + len > pkt.size) return false
+        val ver = (pkt[offset].toInt() ushr 4) and 0x0F
+        val ihl = pkt[offset].toInt() and 0x0F
+        val hdrLen = ihl * 4
+        if (ver != 4 || ihl < 5 || hdrLen > len) return false
+
+        val totalLen = ((pkt[offset + 2].toInt() and 0xFF) shl 8) or (pkt[offset + 3].toInt() and 0xFF)
+        if (totalLen != len) return false
+
+        val flagsAndFrag = ((pkt[offset + 6].toInt() and 0xFF) shl 8) or (pkt[offset + 7].toInt() and 0xFF)
+        val fragOffset = flagsAndFrag and 0x1FFF
+        val proto = pkt[offset + 9].toInt() and 0xFF
+
+        // Somente o primeiro fragmento (fragOffset == 0) carrega portas TCP (6) / UDP (17)
+        if (fragOffset == 0 && (proto == 6 || proto == 17)) {
+            if (hdrLen + 4 > len) return false
+            val srcPort = ((pkt[offset + hdrLen].toInt() and 0xFF) shl 8) or
+                (pkt[offset + hdrLen + 1].toInt() and 0xFF)
+            val dstPort = ((pkt[offset + hdrLen + 2].toInt() and 0xFF) shl 8) or
+                (pkt[offset + hdrLen + 3].toInt() and 0xFF)
+            if (srcPort in BLOCKED_SYSTEM_PORTS || dstPort in BLOCKED_SYSTEM_PORTS) {
+                return false
+            }
+        }
+        return true
+    }
+
+    fun inspectOutgoingIpv4Target(pkt: ByteArray, len: Int, expectedSenderNode: Int): Int {
+        if (!passesPortFirewall(pkt, 0, len)) return -1
+
+        val s0 = pkt[12].toInt() and 0xFF
+        val s1 = pkt[13].toInt() and 0xFF
+        val s2 = pkt[14].toInt() and 0xFF
+        val s3 = pkt[15].toInt() and 0xFF
+        if (s0 != 10 || s1 != 10 || s2 != 0 || s3 != expectedSenderNode) return -1
 
         val d0 = pkt[16].toInt() and 0xFF
         val d1 = pkt[17].toInt() and 0xFF
@@ -353,5 +521,36 @@ object TunnelProtocol {
             return d3
         }
         return -1
+    }
+
+    /**
+     * Valida pacote IPv4 recebido pelo túnel antes de injetar na interface tun0:
+     * impede IP Spoofing (exige que o IP de origem interno seja exatamente 10.10.0.<senderNode>)
+     * e aplica o firewall de portas sensíveis do sistema.
+     */
+    fun validateIncomingTunnelIpv4(
+        pkt: ByteArray,
+        offset: Int,
+        len: Int,
+        authenticatedSenderNode: Int
+    ): Boolean {
+        if (authenticatedSenderNode !in HOST_NODE_ID..MAX_CLIENT_NODE_ID) return false
+        if (!passesPortFirewall(pkt, offset, len)) return false
+
+        val s0 = pkt[offset + 12].toInt() and 0xFF
+        val s1 = pkt[offset + 13].toInt() and 0xFF
+        val s2 = pkt[offset + 14].toInt() and 0xFF
+        val s3 = pkt[offset + 15].toInt() and 0xFF
+        if (s0 != 10 || s1 != 10 || s2 != 0 || s3 != authenticatedSenderNode) return false
+
+        val d0 = pkt[offset + 16].toInt() and 0xFF
+        val d1 = pkt[offset + 17].toInt() and 0xFF
+        val d2 = pkt[offset + 18].toInt() and 0xFF
+        val d3 = pkt[offset + 19].toInt() and 0xFF
+
+        val validUnicast = (d0 == 10 && d1 == 10 && d2 == 0 && d3 in HOST_NODE_ID..MAX_CLIENT_NODE_ID)
+        val validBroadcast = (d0 == 10 && d1 == 10 && d2 == 0 && d3 == 255) ||
+            (d0 == 255 && d1 == 255 && d2 == 255 && d3 == 255)
+        return validUnicast || validBroadcast
     }
 }

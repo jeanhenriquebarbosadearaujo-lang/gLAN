@@ -9,12 +9,13 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.abs
 
 /**
- * Diretório em tempo real de Salas Públicas Abertas + Verificador pré-conexão (Room Probe):
- * - Escuta LOBBY_TOPIC para listar salas públicas ao vivo sem salas fantasmas.
- * - Verifica em ~150ms–2.2s se uma sala (pública ou privada) realmente existe antes
- *   de iniciar a VPN, evitando ficar preso em "Conectando..." em salas inexistentes.
+ * Diretório autenticado em tempo real de Salas Públicas Abertas + Verificador pré-conexão:
+ * - Cada anúncio de abertura/fechamento de Sala Pública é assinado digitalmente com ECDSA P-256
+ *   pela chave privada efêmera do Anfitrião, impedindo que terceiros falsifiquem ou fechem salas alheias.
+ * - Verifica em ~150ms–2.2s se uma sala realmente existe antes de ativar a VPN.
  */
 class PublicLobbyBrowser(
     private val onRoomsUpdated: (List<PublicRoomEntry>, Boolean) -> Unit
@@ -26,6 +27,7 @@ class PublicLobbyBrowser(
         val hostName: String,
         val currentPlayers: Int,
         val maxPlayers: Int,
+        val ownerPubKeyB64: String,
         val lastSeenAtMs: Long
     ) {
         val isFull: Boolean get() = currentPlayers >= maxPlayers
@@ -37,37 +39,71 @@ class PublicLobbyBrowser(
         data class Full(val current: Int, val max: Int) : ProbeResult()
         object Blocked : ProbeResult()
         object Offline : ProbeResult()
+        object Aborted : ProbeResult()
     }
 
     companion object {
-        const val LOBBY_TOPIC = "glan/v24/lobby/live"
+        const val LOBBY_TOPIC = "glan/v26/lobby/live"
         private const val STALE_TIMEOUT_MS = 8_500L
-        private val lobbyCipher = RoomCrypto.SessionCipher("GLANPUBLICLOBBYV24")
+        private const val MAX_CLOCK_SKEW_MS = 180_000L
+        private val lobbyCipher by lazy { RoomCrypto.SessionCipher("GLANPUBLICLOBBYV26") }
         private val probeRng = SecureRandom()
 
+        private fun canonicalOpenSignData(
+            code: String,
+            title: String,
+            host: String,
+            cur: Int,
+            max: Int,
+            ts: Long
+        ): ByteArray = "v26|open|$code|$title|$host|$cur|$max|$ts".toByteArray(Charsets.UTF_8)
+
+        private fun canonicalCloseSignData(code: String, ts: Long): ByteArray =
+            "v26|close|$code|$ts".toByteArray(Charsets.UTF_8)
+
         fun buildOpenBeaconEncrypted(
+            identity: RoomCrypto.IdentityKeyBox,
             roomCode: String,
             roomTitle: String,
             hostName: String,
             currentPlayers: Int,
             maxPlayers: Int
         ): ByteArray {
-            val cleanTitle = roomTitle.trim().ifBlank { "Sala de $hostName" }.take(28)
+            val cleanCode = RoomCrypto.normalizeRoomCode(roomCode)
+            val cleanHost = RoomCrypto.cleanSafeText(hostName, 24).ifBlank { "Anfitrião" }
+            val cleanTitle = RoomCrypto.cleanSafeText(roomTitle, 28).ifBlank { "Sala de $cleanHost" }
+            val max = maxPlayers.coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
+            val cur = currentPlayers.coerceIn(1, max)
+            val ts = System.currentTimeMillis()
+            val sig = identity.signToBase64(canonicalOpenSignData(cleanCode, cleanTitle, cleanHost, cur, max, ts))
+
             val json = JSONObject().apply {
                 put("open", true)
-                put("code", RoomCrypto.normalizeRoomCode(roomCode))
+                put("code", cleanCode)
                 put("title", cleanTitle)
-                put("host", hostName.take(24))
-                put("cur", currentPlayers.coerceIn(1, TunnelProtocol.MAX_TOTAL_PLAYERS))
-                put("max", maxPlayers.coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS))
+                put("host", cleanHost)
+                put("cur", cur)
+                put("max", max)
+                put("ts", ts)
+                put("pub", identity.publicKeyBase64)
+                put("sig", sig)
             }
             return lobbyCipher.encrypt(json.toString().toByteArray(Charsets.UTF_8))
         }
 
-        fun buildCloseBeaconEncrypted(roomCode: String): ByteArray {
+        fun buildCloseBeaconEncrypted(
+            identity: RoomCrypto.IdentityKeyBox,
+            roomCode: String
+        ): ByteArray {
+            val cleanCode = RoomCrypto.normalizeRoomCode(roomCode)
+            val ts = System.currentTimeMillis()
+            val sig = identity.signToBase64(canonicalCloseSignData(cleanCode, ts))
             val json = JSONObject().apply {
                 put("open", false)
-                put("code", RoomCrypto.normalizeRoomCode(roomCode))
+                put("code", cleanCode)
+                put("ts", ts)
+                put("pub", identity.publicKeyBase64)
+                put("sig", sig)
             }
             return lobbyCipher.encrypt(json.toString().toByteArray(Charsets.UTF_8))
         }
@@ -139,7 +175,7 @@ class PublicLobbyBrowser(
         onResult: (ProbeResult) -> Unit
     ) {
         val code = RoomCrypto.normalizeRoomCode(rawCode)
-        if (code.length < 4) {
+        if (code.length < 4 || code.length > 12) {
             onResult(ProbeResult.NotFound)
             return
         }
@@ -150,13 +186,18 @@ class PublicLobbyBrowser(
 
         Thread({
             val waitStart = System.currentTimeMillis()
-            while (mqtt?.isConnected() != true && System.currentTimeMillis() - waitStart < 2_200L) {
+            while (active.get() && mqtt?.isConnected() != true && System.currentTimeMillis() - waitStart < 2_200L) {
                 try {
                     Thread.sleep(80L)
                 } catch (_: InterruptedException) {
-                    onResult(ProbeResult.Offline)
+                    onResult(ProbeResult.Aborted)
                     return@Thread
                 }
+            }
+
+            if (!active.get()) {
+                onResult(ProbeResult.Aborted)
+                return@Thread
             }
 
             val client = mqtt
@@ -165,7 +206,7 @@ class PublicLobbyBrowser(
                 return@Thread
             }
 
-            val topicRoot = "gdroidlan/v1/${RoomCrypto.deriveTopicHash(code)}"
+            val topicRoot = "gdroidlan/v26/${RoomCrypto.deriveTopicHash(code)}"
             val h2cTopic = "$topicRoot/h2c/ctl"
             val c2hTopic = "$topicRoot/c2h/ctl"
             val roomCipher = RoomCrypto.SessionCipher(code)
@@ -191,7 +232,7 @@ class PublicLobbyBrowser(
                             }
                         }
                         TunnelProtocol.TYPE_ROSTER -> {
-                            val roster = TunnelProtocol.parseRoster(plain)
+                            val roster = TunnelProtocol.parseRoster(plain, expectedHostKey = null)
                             if (roster != null) {
                                 val cur = roster.members.size
                                 val mapped = if (cur >= roster.maxPlayers) {
@@ -215,13 +256,13 @@ class PublicLobbyBrowser(
 
                 val stepMs = 650L
                 var elapsed = 0L
-                while (elapsed < timeoutMs && outcomeRef.get() == null) {
+                while (active.get() && elapsed < timeoutMs && outcomeRef.get() == null) {
                     val waitSlice = minOf(stepMs, timeoutMs - elapsed)
                     if (latch.await(waitSlice, TimeUnit.MILLISECONDS)) {
                         break
                     }
                     elapsed += waitSlice
-                    if (outcomeRef.get() == null && elapsed < timeoutMs) {
+                    if (active.get() && outcomeRef.get() == null && elapsed < timeoutMs) {
                         val retryPkt = roomCipher.encrypt(TunnelProtocol.buildProbeReq(probeId, accountUid))
                         client.publish(c2hTopic, retryPkt)
                     }
@@ -229,7 +270,12 @@ class PublicLobbyBrowser(
             } catch (_: Exception) {
             } finally {
                 topicListeners.remove(h2cTopic)
-                client.unsubscribe(h2cTopic)
+                mqtt?.unsubscribe(h2cTopic)
+            }
+
+            if (!active.get() && outcomeRef.get() == null) {
+                onResult(ProbeResult.Aborted)
+                return@Thread
             }
 
             val finalOutcome = outcomeRef.get() ?: ProbeResult.NotFound
@@ -269,23 +315,48 @@ class PublicLobbyBrowser(
         if (!active.get()) return
         val plain = lobbyCipher.decrypt(encrypted) ?: return
         try {
+            val now = System.currentTimeMillis()
             val j = JSONObject(String(plain, Charsets.UTF_8))
             val code = RoomCrypto.normalizeRoomCode(j.optString("code", ""))
-            if (code.length < 4) return
+            if (code.length < 4 || code.length > 12) return
+
+            val ts = j.optLong("ts", 0L)
+            if (ts <= 0L || abs(now - ts) > MAX_CLOCK_SKEW_MS) return
+
+            val pubB64 = j.optString("pub", "")
+            val sigB64 = j.optString("sig", "")
+            val pubKey = RoomCrypto.decodeEcPublicKey(pubB64) ?: return
+
+            val existing = roomsMap[code]
+            if (existing != null && now - existing.lastSeenAtMs <= STALE_TIMEOUT_MS) {
+                // Impede sequestro ou fechamento falso de sala ativa por outra chave pública
+                if (existing.ownerPubKeyB64 != pubB64) return
+            }
 
             val isOpen = j.optBoolean("open", true)
             if (!isOpen) {
-                if (roomsMap.remove(code) != null) {
+                if (!RoomCrypto.verifySignature(pubKey, canonicalCloseSignData(code, ts), sigB64)) return
+                if (existing != null && existing.ownerPubKeyB64 == pubB64) {
+                    roomsMap.remove(code)
                     dispatchSnapshot()
                 }
                 return
             }
 
-            val host = j.optString("host", "Anfitrião").ifBlank { "Anfitrião" }.take(24)
-            val title = j.optString("title", "Sala de $host").ifBlank { "Sala de $host" }.take(28)
+            val host = RoomCrypto.cleanSafeText(j.optString("host", ""), 24).ifBlank { "Anfitrião" }
+            val title = RoomCrypto.cleanSafeText(j.optString("title", ""), 28).ifBlank { "Sala de $host" }
             val max = j.optInt("max", TunnelProtocol.MAX_TOTAL_PLAYERS)
                 .coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
             val cur = j.optInt("cur", 1).coerceIn(1, max)
+
+            if (!RoomCrypto.verifySignature(
+                    pubKey,
+                    canonicalOpenSignData(code, title, host, cur, max, ts),
+                    sigB64
+                )
+            ) {
+                return
+            }
 
             roomsMap[code] = PublicRoomEntry(
                 roomCode = code,
@@ -293,7 +364,8 @@ class PublicLobbyBrowser(
                 hostName = host,
                 currentPlayers = cur,
                 maxPlayers = max,
-                lastSeenAtMs = System.currentTimeMillis()
+                ownerPubKeyB64 = pubB64,
+                lastSeenAtMs = now
             )
             dispatchSnapshot()
         } catch (_: Exception) { }

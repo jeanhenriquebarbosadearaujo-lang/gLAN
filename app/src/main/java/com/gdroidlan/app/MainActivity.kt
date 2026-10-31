@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
@@ -35,6 +36,11 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val CREDITO_TIKTOK_HANDLE = ".memze"
+        private const val CREDITO_TIKTOK_URL = "https://www.tiktok.com/@.memze"
+    }
+
     private lateinit var b: ActivityMainBinding
     private val prefs by lazy { getSharedPreferences("gdroid_lan_prefs", Context.MODE_PRIVATE) }
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -49,14 +55,12 @@ class MainActivity : AppCompatActivity() {
     private var aguardandoPermissaoParaHost = true
     private var codigoPendenteConexao = ""
 
-    // Estado de verificação prévia da sala (evita entrar em "CONECTANDO" quando a sala não existe)
     private var verificandoSala = false
     private var badgeErroLocal: String? = null
     private var erroVerificacaoLocal: String? = null
     private var cacheSalasPublicas: List<PublicLobbyBrowser.PublicRoomEntry> = emptyList()
     private var cacheDiretorioConectado: Boolean = false
 
-    // Cooldowns anti-spam (SystemClock.elapsedRealtime)
     private var cooldownPrincipalAteMs = 0L
     private var cooldownGerarCodigoAteMs = 0L
     private var cooldownPingAteMs = 0L
@@ -70,7 +74,6 @@ class MainActivity : AppCompatActivity() {
             val agora = SystemClock.elapsedRealtime()
             var precisaContinuar = false
 
-            // 1. Cooldown de "Gerar outro" código
             val restGerar = segundosRestantes(cooldownGerarCodigoAteMs, agora)
             if (restGerar > 0) {
                 b.btnGerarNovoCodigo.isEnabled = false
@@ -83,7 +86,6 @@ class MainActivity : AppCompatActivity() {
                 b.btnGerarNovoCodigo.text = "Gerar outro"
             }
 
-            // 2. Cooldown de "Atualizar" lista de salas públicas
             val restLobby = segundosRestantes(cooldownLobbyRefreshAteMs, agora)
             if (restLobby > 0) {
                 b.btnAtualizarLobby.isEnabled = false
@@ -96,7 +98,6 @@ class MainActivity : AppCompatActivity() {
                 b.btnAtualizarLobby.text = "Atualizar"
             }
 
-            // 3. Cooldown de "Testar Ping da Sala"
             val snap = GdroidLanVpnService.currentSnapshot
             val restPing = segundosRestantes(cooldownPingAteMs, agora)
             if (restPing > 0) {
@@ -108,7 +109,6 @@ class MainActivity : AppCompatActivity() {
                 b.btnTestarPing.text = "Testar Ping da Sala"
             }
 
-            // 4. Cooldown de "Desbloquear" removidos
             val restDesbloq = segundosRestantes(cooldownDesbloquearAteMs, agora)
             if (restDesbloq > 0) {
                 b.btnDesbloquearRemovidos.isEnabled = false
@@ -119,7 +119,6 @@ class MainActivity : AppCompatActivity() {
                 b.btnDesbloquearRemovidos.alpha = 1.0f
             }
 
-            // 5. Cooldown da ação principal (Iniciar/Encerrar Servidor e Entrar/Sair da Sala)
             val restPrincipal = segundosRestantes(cooldownPrincipalAteMs, agora)
             if (restPrincipal > 0) {
                 precisaContinuar = true
@@ -179,6 +178,10 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
+        val versaoInstalada = obterVersaoInstalada()
+        b.txtVersaoTopo.text = "v$versaoInstalada"
+        b.txtVersaoCard.text = "Versão $versaoInstalada"
+
         pedirPermissaoNotificacaoSeNecessario()
         b.txtContaTopo.text = "Conta: ${conta.displayName}"
 
@@ -209,6 +212,7 @@ class MainActivity : AppCompatActivity() {
         configurarAbasModo()
         configurarSeletorCapacidade()
         configurarBotoesPrincipais()
+        configurarSecaoCreditos()
 
         GdroidLanVpnService.onManualPongToast = { rtt, modo ->
             runOnUiThread {
@@ -236,6 +240,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         lobbyBrowser.stop()
+        if (verificandoSala) {
+            verificandoSala = false
+        }
         GdroidLanVpnService.removeListener(stateListener)
         super.onStop()
     }
@@ -244,6 +251,41 @@ class MainActivity : AppCompatActivity() {
         uiHandler.removeCallbacksAndMessages(null)
         toastAtual?.cancel()
         super.onDestroy()
+    }
+
+    private fun obterVersaoInstalada(): String {
+        return try {
+            val pInfo = packageManager.getPackageInfo(packageName, 0)
+            pInfo.versionName ?: "2.6"
+        } catch (_: Exception) {
+            "2.6"
+        }
+    }
+
+    private fun criarIntentServicoAutenticado(acao: String): Intent {
+        return Intent(this, GdroidLanVpnService::class.java).apply {
+            action = acao
+            putExtra(GdroidLanVpnService.EXTRA_CALLER_TOKEN, GdroidLanVpnService.INTERNAL_CALLER_TOKEN)
+        }
+    }
+
+    private fun configurarSecaoCreditos() {
+        b.btnCopiarTiktok.setOnClickListener {
+            copiarTexto("TikTok Jean Henrique", CREDITO_TIKTOK_HANDLE)
+            aplicarCooldownBotaoRapido(b.btnCopiarTiktok, 1_500L, "Copiado")
+            toast("TikTok $CREDITO_TIKTOK_HANDLE copiado.")
+        }
+
+        b.btnAbrirTiktok.setOnClickListener {
+            aplicarCooldownBotaoRapido(b.btnAbrirTiktok, 1_500L)
+            try {
+                val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(CREDITO_TIKTOK_URL))
+                startActivity(viewIntent)
+            } catch (_: Exception) {
+                copiarTexto("TikTok Jean Henrique", CREDITO_TIKTOK_HANDLE)
+                toast("TikTok $CREDITO_TIKTOK_HANDLE copiado.")
+            }
+        }
     }
 
     private fun isSessaoAtiva(snap: GdroidLanVpnService.TunnelSnapshot = GdroidLanVpnService.currentSnapshot): Boolean {
@@ -321,17 +363,17 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 if (isSessaoAtiva()) return
-                val txt = s?.toString()?.trim().orEmpty()
+                val txt = RoomCrypto.cleanSafeText(s?.toString().orEmpty(), 28)
                 prefs.edit().putString("host_room_title", txt).apply()
             }
         })
     }
 
     private fun obterTituloSalaAtual(): String {
-        val digitado = b.edtNomeSalaPublica.text?.toString()?.trim().orEmpty()
-        if (digitado.isNotBlank()) return digitado.take(28)
+        val digitado = RoomCrypto.cleanSafeText(b.edtNomeSalaPublica.text?.toString().orEmpty(), 28)
+        if (digitado.isNotBlank()) return digitado
         val nomeConta = contaAtiva?.displayName ?: "Jogador"
-        return "Sala de $nomeConta".take(28)
+        return RoomCrypto.cleanSafeText("Sala de $nomeConta", 28)
     }
 
     private fun configurarSeletorCapacidade() {
@@ -562,10 +604,7 @@ class MainActivity : AppCompatActivity() {
 
             if (isSessaoAtiva()) {
                 iniciarCooldownPrincipal(3)
-                val stop = Intent(this, GdroidLanVpnService::class.java).apply {
-                    action = GdroidLanVpnService.ACTION_STOP
-                }
-                startService(stop)
+                startService(criarIntentServicoAutenticado(GdroidLanVpnService.ACTION_STOP))
                 return@setOnClickListener
             }
 
@@ -589,10 +628,7 @@ class MainActivity : AppCompatActivity() {
             cooldownDesbloquearAteMs = agora + 3_000L
             dispararTickerCooldown()
 
-            val clearIntent = Intent(this, GdroidLanVpnService::class.java).apply {
-                action = GdroidLanVpnService.ACTION_CLEAR_BLOCKS
-            }
-            startService(clearIntent)
+            startService(criarIntentServicoAutenticado(GdroidLanVpnService.ACTION_CLEAR_BLOCKS))
             toast("Lista de bloqueios da sala limpa.")
         }
 
@@ -602,18 +638,11 @@ class MainActivity : AppCompatActivity() {
             cooldownPingAteMs = agora + 5_000L
             dispararTickerCooldown()
 
-            val pingIntent = Intent(this, GdroidLanVpnService::class.java).apply {
-                action = GdroidLanVpnService.ACTION_MANUAL_PING
-            }
-            startService(pingIntent)
+            startService(criarIntentServicoAutenticado(GdroidLanVpnService.ACTION_MANUAL_PING))
             toast("Testando latência da sala...")
         }
     }
 
-    /**
-     * Verifica em tempo real se a sala realmente existe antes de entrar em modo VPN/CONECTANDO.
-     * Se não existir, exibe imediatamente erro de sala inexistente sem ficar conectando.
-     */
     private fun verificarExistenciaEEntrar(codigoNormalizado: String) {
         if (verificandoSala || isSessaoAtiva()) return
         val agora = SystemClock.elapsedRealtime()
@@ -661,6 +690,9 @@ class MainActivity : AppCompatActivity() {
                             badge = "SEM CONEXÃO",
                             mensagem = "Sem conexão com a rede para localizar a sala. Verifique sua internet."
                         )
+                    }
+                    is PublicLobbyBrowser.ProbeResult.Aborted -> {
+                        renderizarEstado(GdroidLanVpnService.currentSnapshot)
                     }
                 }
             }
@@ -745,8 +777,8 @@ class MainActivity : AppCompatActivity() {
     private fun dispararServicoVpn(asHost: Boolean, code: String) {
         lobbyBrowser.stop()
         val conta = contaAtiva
-        val i = Intent(this, GdroidLanVpnService::class.java).apply {
-            action = if (asHost) GdroidLanVpnService.ACTION_START_HOST else GdroidLanVpnService.ACTION_START_CLIENT
+        val acao = if (asHost) GdroidLanVpnService.ACTION_START_HOST else GdroidLanVpnService.ACTION_START_CLIENT
+        val i = criarIntentServicoAutenticado(acao).apply {
             putExtra(GdroidLanVpnService.EXTRA_ROOM_CODE, code)
             putExtra(GdroidLanVpnService.EXTRA_PLAYER_NAME, conta?.displayName ?: "Jogador")
             putExtra(GdroidLanVpnService.EXTRA_ACCOUNT_UID, conta?.accountUid ?: 0L)
@@ -779,8 +811,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun enviarComandoKick(nodeId: Int, bloquearSessao: Boolean) {
-        val kickIntent = Intent(this, GdroidLanVpnService::class.java).apply {
-            action = GdroidLanVpnService.ACTION_KICK_PEER
+        val kickIntent = criarIntentServicoAutenticado(GdroidLanVpnService.ACTION_KICK_PEER).apply {
             putExtra(GdroidLanVpnService.EXTRA_TARGET_NODE_ID, nodeId)
             putExtra(GdroidLanVpnService.EXTRA_BLOCK_SESSION, bloquearSessao)
         }

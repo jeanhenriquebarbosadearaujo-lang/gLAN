@@ -34,13 +34,34 @@
                 android:layout_weight="1"
                 android:orientation="vertical">
 
-                <TextView
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="gLAN"
-                    android:textColor="@color/text_primary"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="gLAN"
+                        android:textColor="@color/text_primary"
+                        android:textSize="20sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txtVersaoTopo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:background="@color/surface_elevated"
+                        android:fontFamily="monospace"
+                        android:paddingHorizontal="6dp"
+                        android:paddingVertical="2dp"
+                        android:text="v2.6"
+                        android:textColor="@color/neon_cyan"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/txtContaTopo"
@@ -180,7 +201,7 @@
                         app:strokeColor="@color/stroke_subtle" />
                 </com.google.android.material.button.MaterialButtonToggleGroup>
 
-                <!-- NOME DA SALA PÚBLICA (EXIBIDO APENAS QUANDO "PÚBLICA" ESTÁ ATIVA) -->
+                <!-- NOME DA SALA PÚBLICA -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/layoutNomeSalaPublica"
                     android:layout_width="match_parent"
@@ -892,6 +913,125 @@
                     android:text="1. Sala Pública aparece aberta para todos; Sala Privada exige o Código da Sala.\n2. Conecte na sala desejada e copie o IP fixo 10.10.0.1.\n3. Abra o GDroid e entre na partida usando o IP 10.10.0.1."
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- SEÇÃO DE CRÉDITOS E VERSÃO -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardCreditos"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            app:cardBackgroundColor="@color/surface_card"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/stroke_subtle"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="CRÉDITOS E VERSÃO"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txtVersaoCard"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@color/surface_elevated"
+                        android:fontFamily="monospace"
+                        android:paddingHorizontal="8dp"
+                        android:paddingVertical="3dp"
+                        android:text="Versão 2.6"
+                        android:textColor="@color/neon_cyan"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Jean Henrique"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="TikTok: .memze"
+                            android:textColor="@color/neon_cyan"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCopiarTiktok"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="34dp"
+                        android:layout_marginEnd="6dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="Copiar"
+                        android:textColor="@color/text_primary"
+                        android:textSize="11sp"
+                        app:strokeColor="@color/stroke_subtle" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnAbrirTiktok"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="34dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="TikTok"
+                        android:textColor="@color/neon_cyan"
+                        android:textSize="11sp"
+                        app:strokeColor="@color/stroke_subtle" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Segurança ativa: Criptografia E2EE (ECDH P-256 + AES-GCM) • Firewall de Rede"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="10sp" />
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

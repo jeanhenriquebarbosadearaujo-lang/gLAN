@@ -5,23 +5,26 @@
 <h1 align="center">gLAN — Rede Virtual P2P para Multiplayer</h1>
 
 <p align="center">
-  <b>Conecte salas multiplayer do GDroid e jogos LAN à distância com Salas Públicas Abertas ou Privadas, verificação instantânea de salas ativas, criptografia ponta a ponta, até 8 jogadores e moderação em tempo real.</b>
+  <b>Conecte salas multiplayer do GDroid e jogos LAN à distância com Salas Públicas Abertas ou Privadas, criptografia E2EE par-a-par (ECDH P-256 + ECDSA + AES-128-GCM), firewall interno de portas, até 8 jogadores e moderação em tempo real.</b>
 </p>
 
 ---
 
 ## Principais Recursos
 
-- **Salas Públicas ou Privadas (Travadas em Sessão):** antes de abrir o servidor, o anfitrião escolhe **Privada** ou **Pública** e define o limite de **2 até 8 jogadores** (`-` / `+`). Após iniciar o servidor, a visibilidade e o limite de jogadores permanecem travados até o encerramento da sala.
-- **Verificação Instantânea de Sala Existente:** ao tocar para entrar em uma sala pública ou código privado, o aplicativo confirma antes se a sala realmente está ativa; caso não exista, esteja lotada ou bloqueada, informa o erro na hora sem entrar em estado de conexão falsa.
-- **Proteção com Cooldowns Anti-Spam:** cooldowns visuais em início/encerramento de sala, tentativas de entrada, geração de novo código, atualização manual da lista pública, teste de ping, desbloqueio e botões de cópia.
-- **Conta Única por Instalação (Apenas Nome):** sem senha e sem login repetido; permanece salva enquanto o app não for desinstalado (`allowBackup="false"`).
-- **Split-Tunnel (`10.10.0.0/24`) + Anti-CGNAT:** criptografia `AES-128-GCM` com rota Direta P2P (UDP Hole-Punching) e contingência automática via Ponte TLS.
+- **Segurança Reforçada (v2.6):**
+  - Acordo de chaves **ECDH P-256** individual por jogador (Forward Secrecy par-a-par) + **AES-128-GCM** com janela anti-replay de 512 pacotes.
+  - Assinatura digital **ECDSA P-256 (`SHA256withECDSA`)** nos anúncios de Salas Públicas, lista de participantes, expulsões e encerramento de sala (impede falsificação ou derrubada de salas públicas).
+  - **Firewall IPv4 no Túnel Virtual:** bloqueio estrito contra falsificação de IP interno (*Anti-IP-Spoofing*) e bloqueio automático de portas críticas do Android (ADB, SSH, Telnet, SMB).
+  - Conexão de sinalização exclusivamente via **TLS 1.2/1.3 (porta 8883)** com validação estrita de hostname X.509 e `usesCleartextTraffic="false"`.
+- **Salas Públicas ou Privadas (Travadas em Sessão):** visibilidade e limite de **2 a 8 jogadores** (`-` / `+`) configuráveis antes de abrir e travados durante a partida.
+- **Verificação Instantânea de Sala Existente + Cooldowns Anti-Spam:** detecta imediatamente salas inexistentes, lotadas ou bloqueadas sem entrar em falso estado de conexão.
+- **Conta Única por Instalação (Apenas Nome):** vinculada ao aparelho (`allowBackup="false"`), sem senha.
 
 ---
 
-## Como Usar
+## Créditos
 
-1. **Anfitrião (`Criar Servidor`):** escolha **Privada** ou **Pública**, defina o limite (`2` a `8`) e toque em **INICIAR SERVIDOR**.
-2. **Convidados (`Entrar na Sala`):** toque em **Entrar** em uma sala da lista **Salas Públicas Abertas** ou informe o código privado.
-3. **No GDroid:** toque em **Copiar IP** (`10.10.0.1`), abra o GDroid e entre usando **`10.10.0.1`**.
+- **Criador:** Jean Henrique
+- **TikTok:** `.memze`
+- **Versão Atual:** `2.6`

@@ -2,6 +2,7 @@ package com.gdroidlan.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.appcompat.app.AppCompatActivity
@@ -11,11 +12,11 @@ import com.gdroidlan.app.databinding.ActivityAuthBinding
 class AuthActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityAuthBinding
+    private var ultimoCliqueMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Se a conta única desta instalação já foi criada, entra direto no painel principal
         if (AccountManagerStore.getActiveAccount(this) != null) {
             abrirPainelPrincipal()
             return
@@ -39,9 +40,14 @@ class AuthActivity : AppCompatActivity() {
     }
 
     private fun concluirCriacaoConta() {
+        val agora = SystemClock.elapsedRealtime()
+        if (agora - ultimoCliqueMs < 600L) return
+        ultimoCliqueMs = agora
+
         val nomeDigitado = b.edtNomeExibicao.text?.toString().orEmpty()
         when (val res = AccountManagerStore.createSingleAccount(this, nomeDigitado)) {
             is AccountManagerStore.CreateResult.Success -> {
+                b.btnConfirmarConta.isEnabled = false
                 b.txtErroConta.visibility = View.GONE
                 abrirPainelPrincipal()
             }

@@ -1,6 +1,7 @@
 package com.gdroidlan.app.auth
 
 import android.content.Context
+import com.gdroidlan.app.crypto.RoomCrypto
 import java.security.SecureRandom
 
 object AccountManagerStore {
@@ -24,11 +25,14 @@ object AccountManagerStore {
     private val rng = SecureRandom()
 
     fun sanitizeDisplayName(raw: String): String =
-        raw.trim().replace(Regex("\\s+"), " ").take(24)
+        RoomCrypto.cleanSafeText(raw, 24)
 
     fun getActiveAccount(context: Context): UserAccount? {
         val prefs = context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
-        val savedName = prefs.getString(KEY_DISPLAY_NAME, null)?.takeIf { it.isNotBlank() } ?: return null
+        val savedName = prefs.getString(KEY_DISPLAY_NAME, null)
+            ?.let { sanitizeDisplayName(it) }
+            ?.takeIf { it.length >= 2 }
+            ?: return null
         val uid = prefs.getLong(KEY_ACCOUNT_UID, 0L)
         if (uid == 0L) return null
         val tag = prefs.getString(KEY_ACCOUNT_TAG, null) ?: formatTag(uid)
@@ -40,7 +44,6 @@ object AccountManagerStore {
     }
 
     fun createSingleAccount(context: Context, rawDisplayName: String): CreateResult {
-        // Garante apenas uma única conta por instalação do aplicativo
         getActiveAccount(context)?.let { existing ->
             return CreateResult.Success(existing)
         }
