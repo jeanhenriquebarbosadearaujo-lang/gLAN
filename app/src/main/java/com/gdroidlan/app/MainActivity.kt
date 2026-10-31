@@ -282,9 +282,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "2.7"
+            pInfo.versionName ?: "2.8"
         } catch (_: Exception) {
-            "2.7"
+            "2.8"
         }
     }
 
