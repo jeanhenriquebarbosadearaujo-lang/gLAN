@@ -17,7 +17,7 @@
   2. **Entrar na Sala:** entrada rápida por código de 6 caracteres com verificação prévia se a sala existe.
   3. **Criar Servidor:** escolha entre **Privada** ou **Pública**, limite de **2 a 8 jogadores** (`-` / `+`) e botão **Expulsar / Bloquear** jogadores em tempo real assinado digitalmente pelo Host.
 - **Ping em Tempo Real (`ms`):** medição contínua da latência nos servidores públicos e em cada participante conectado na sala.
-- **Menu Lateral (Gaveta):** acesso organizado a **Configurações** (manter ativo em segundo plano sem restrição de bateria, estatísticas de tráfego `KB/s`, ping automático na lista e avisos da sala), **Política de Privacidade**, **Termos de Serviço** e **Créditos**.
+- **Menu Lateral (Gaveta):** acesso organizado a **Perfil** (alteração de nome com filtro anti-+18/ofensas e verificação de nome único), **Configurações** (manter ativo em segundo plano sem restrição de bateria, estatísticas de tráfego `KB/s`, ping automático na lista e avisos da sala), **Política de Privacidade**, **Termos de Serviço** e **Créditos**.
 - **Segurança Reforçada:** ECDH P-256 par-a-par + assinatura digital ECDSA P-256 + AES-128-GCM com janela anti-replay + Firewall interno IPv4 + TLS 1.2/1.3 obrigatório.
 
 ---
@@ -26,4 +26,4 @@
 
 - **Criador:** Jean Henrique
 - **TikTok:** `.memze`
-- **Versão Atual:** `3.0`
+- **Versão Atual:** `3.1`

@@ -126,7 +126,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:gravity="center"
-            android:text="gLAN v3.0 • Criado por Jean Henrique • TikTok: .memze"
+            android:text="gLAN v3.1 • Criado por Jean Henrique • TikTok: .memze"
             android:textColor="@color/neon_cyan"
             android:textSize="11sp"
             android:textStyle="bold" />

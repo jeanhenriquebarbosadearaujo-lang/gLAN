@@ -28,8 +28,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
 import com.gdroidlan.app.auth.AccountManagerStore
+import com.gdroidlan.app.auth.NameModerationFilter
+import com.gdroidlan.app.auth.NameRegistry
 import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.databinding.ActivityMainBinding
+import com.gdroidlan.app.databinding.DialogProfileBinding
 import com.gdroidlan.app.databinding.DialogSettingsBinding
 import com.gdroidlan.app.databinding.ItemPeerRowBinding
 import com.gdroidlan.app.databinding.ItemPublicRoomBinding
@@ -95,6 +98,7 @@ class MainActivity : AppCompatActivity() {
     private var cooldownPingAteMs = 0L
     private var cooldownLobbyRefreshAteMs = 0L
     private var cooldownDesbloquearAteMs = 0L
+    private var cooldownRenomearAteMs = 0L
     private var ultimoToqueAbaMs = 0L
     private var ultimoCodigoAvisoPopup = 0
 
@@ -294,6 +298,9 @@ class MainActivity : AppCompatActivity() {
         GdroidLanVpnService.addListener(stateListener)
         UpdateNotifier.addListener(updateListener)
         gerenciarLobbyBrowserConformeEstado(GdroidLanVpnService.currentSnapshot)
+        contaAtiva?.let { c ->
+            lobbyBrowser.syncMyActiveNameIfNeeded(c.displayName, c.accountUid)
+        }
         dispararTickerCooldown()
     }
 
@@ -322,9 +329,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.0"
+            pInfo.versionName ?: "3.1"
         } catch (_: Exception) {
-            "3.0"
+            "3.1"
         }
     }
 
@@ -393,6 +400,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        b.btnMenuPerfil.setOnClickListener {
+            b.drawerPrincipal.closeDrawer(GravityCompat.END)
+            mostrarDialogoPerfil()
+        }
+
         b.btnMenuConfiguracoes.setOnClickListener {
             b.drawerPrincipal.closeDrawer(GravityCompat.END)
             mostrarDialogoConfiguracoes()
@@ -447,6 +459,136 @@ class MainActivity : AppCompatActivity() {
             } catch (_: Exception) { }
         }
         toast("Abra as Configurações do Android > Aplicativos > gLAN > Bateria.")
+    }
+
+    private fun mostrarDialogoPerfil() {
+        val conta = contaAtiva ?: return
+        val prof = DialogProfileBinding.inflate(layoutInflater)
+
+        prof.txtPerfilNomeAtual.text = conta.displayName
+        prof.txtPerfilTagConta.text = "ID da instalação: #${conta.accountTag}"
+        prof.edtNovoNomePerfil.setText(conta.displayName)
+        prof.edtNovoNomePerfil.setSelection(conta.displayName.length)
+
+        val dlg = MaterialAlertDialogBuilder(this)
+            .setTitle("Perfil")
+            .setView(prof.root)
+            .create()
+
+        if (isSessaoAtiva()) {
+            prof.edtNovoNomePerfil.isEnabled = false
+            prof.btnSalvarPerfil.isEnabled = false
+            prof.btnSalvarPerfil.alpha = 0.45f
+            prof.txtMensagemPerfil.text = "Encerre ou saia da sala atual antes de alterar seu nome."
+            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FFCA28"))
+            prof.txtMensagemPerfil.visibility = View.VISIBLE
+        }
+
+        prof.edtNovoNomePerfil.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (!isSessaoAtiva()) {
+                    prof.txtMensagemPerfil.visibility = View.GONE
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        prof.btnFecharPerfil.setOnClickListener {
+            dlg.dismiss()
+        }
+
+        prof.btnSalvarPerfil.setOnClickListener {
+            if (isSessaoAtiva()) {
+                prof.txtMensagemPerfil.text = "Encerre a sala atual antes de alterar seu nome."
+                prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FFCA28"))
+                prof.txtMensagemPerfil.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+
+            val agora = SystemClock.elapsedRealtime()
+            val rest = segundosRestantes(cooldownRenomearAteMs, agora)
+            if (rest > 0) {
+                prof.txtMensagemPerfil.text = "Aguarde ${rest}s antes de alterar o nome novamente."
+                prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FFCA28"))
+                prof.txtMensagemPerfil.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+
+            val digitado = prof.edtNovoNomePerfil.text?.toString().orEmpty()
+            val validado = when (val mod = NameModerationFilter.validateDisplayName(digitado)) {
+                is NameModerationFilter.CheckResult.Allowed -> mod.sanitized
+                is NameModerationFilter.CheckResult.Rejected -> {
+                    prof.txtMensagemPerfil.text = mod.reason
+                    prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FF5252"))
+                    prof.txtMensagemPerfil.visibility = View.VISIBLE
+                    return@setOnClickListener
+                }
+            }
+
+            val contaAtual = contaAtiva ?: return@setOnClickListener
+            if (validado == contaAtual.displayName) {
+                dlg.dismiss()
+                return@setOnClickListener
+            }
+
+            prof.edtNovoNomePerfil.isEnabled = false
+            prof.btnSalvarPerfil.isEnabled = false
+            prof.btnFecharPerfil.isEnabled = false
+            prof.btnSalvarPerfil.text = "Verificando..."
+            prof.txtMensagemPerfil.text = "Verificando disponibilidade do nome..."
+            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#00D4FF"))
+            prof.txtMensagemPerfil.visibility = View.VISIBLE
+
+            lobbyBrowser.verifyAndClaimRename(
+                oldDisplayName = contaAtual.displayName,
+                newDisplayName = validado,
+                accountUid = contaAtual.accountUid
+            ) { resultado ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || !dlg.isShowing) return@runOnUiThread
+
+                    when (resultado) {
+                        is NameRegistry.ClaimResult.AlreadyTaken -> {
+                            prof.edtNovoNomePerfil.isEnabled = true
+                            prof.btnSalvarPerfil.isEnabled = true
+                            prof.btnFecharPerfil.isEnabled = true
+                            prof.btnSalvarPerfil.text = "Salvar Nome"
+                            prof.txtMensagemPerfil.text = "Já existe um usuário com esse nome."
+                            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FF5252"))
+                            prof.txtMensagemPerfil.visibility = View.VISIBLE
+                        }
+                        is NameRegistry.ClaimResult.Claimed -> {
+                            when (val salvo = AccountManagerStore.renameActiveAccount(this, validado)) {
+                                is AccountManagerStore.CreateResult.Success -> {
+                                    contaAtiva = salvo.account
+                                    b.txtContaTopo.text = "Conta: ${salvo.account.displayName}"
+                                    b.txtContaMenu.text = "Conta: ${salvo.account.displayName}"
+                                    if (b.edtNomeSalaPublica.text.isNullOrBlank()) {
+                                        b.layoutNomeSalaPublica.hint =
+                                            "Nome da Sala (padrão: Sala de ${salvo.account.displayName})"
+                                    }
+                                    cooldownRenomearAteMs = SystemClock.elapsedRealtime() + 5_000L
+                                    dlg.dismiss()
+                                    toast("Nome atualizado para ${salvo.account.displayName}.")
+                                }
+                                is AccountManagerStore.CreateResult.Error -> {
+                                    prof.edtNovoNomePerfil.isEnabled = true
+                                    prof.btnSalvarPerfil.isEnabled = true
+                                    prof.btnFecharPerfil.isEnabled = true
+                                    prof.btnSalvarPerfil.text = "Salvar Nome"
+                                    prof.txtMensagemPerfil.text = salvo.message
+                                    prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FF5252"))
+                                    prof.txtMensagemPerfil.visibility = View.VISIBLE
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        dlg.show()
     }
 
     private fun mostrarDialogoConfiguracoes() {
@@ -665,6 +807,16 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putString("host_room_title", txt).apply()
             }
         })
+    }
+
+    private fun valResSalaRecusada(tituloDigitado: String): Boolean {
+        return when (val chk = NameModerationFilter.validateRoomTitle(tituloDigitado)) {
+            is NameModerationFilter.CheckResult.Allowed -> false
+            is NameModerationFilter.CheckResult.Rejected -> {
+                exibirErroSalaLocal("NOME BLOQUEADO", chk.reason)
+                true
+            }
+        }
     }
 
     private fun obterTituloSalaAtual(): String {
@@ -965,6 +1117,10 @@ class MainActivity : AppCompatActivity() {
             limparErroVerificacaoLocal()
             when (abaSelecionada) {
                 AbaPrincipal.CRIAR_SERVIDOR -> {
+                    if (salaPublicaSelecionada) {
+                        val tituloDigitado = b.edtNomeSalaPublica.text?.toString().orEmpty()
+                        if (valResSalaRecusada(tituloDigitado)) return@setOnClickListener
+                    }
                     solicitarVpnEIniciar(asHost = true, code = codigoHostAtual)
                 }
                 AbaPrincipal.ENTRAR_SALA -> {

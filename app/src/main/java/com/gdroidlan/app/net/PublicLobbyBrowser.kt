@@ -1,6 +1,8 @@
 package com.gdroidlan.app.net
 
 import android.os.SystemClock
+import com.gdroidlan.app.auth.NameModerationFilter
+import com.gdroidlan.app.auth.NameRegistry
 import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.update.OfficialVersionCert
 import com.gdroidlan.app.update.UpdateNotifier
@@ -131,6 +133,133 @@ class PublicLobbyBrowser(
     @Volatile private var mqtt: MqttLightClient? = null
     @Volatile private var brokerConnected = false
     @Volatile private var autoPingEnabled = true
+    private val nameClaimSyncedOnce = AtomicBoolean(false)
+
+    fun syncMyActiveNameIfNeeded(displayName: String, accountUid: Long) {
+        if (accountUid == 0L || !nameClaimSyncedOnce.compareAndSet(false, true)) return
+        val targetTopic = NameRegistry.topicForDisplayName(displayName) ?: return
+        val canonicalKey = NameModerationFilter.canonicalNameKey(displayName)
+        if (canonicalKey.length < 2) return
+
+        Thread({
+            val waitStart = System.currentTimeMillis()
+            while (active.get() && mqtt?.isConnected() != true && System.currentTimeMillis() - waitStart < 4_000L) {
+                try {
+                    Thread.sleep(150L)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+            }
+            val client = mqtt ?: return@Thread
+            if (!active.get() || !client.isConnected()) return@Thread
+
+            val latch = CountDownLatch(1)
+            val ownerRef = AtomicLong(0L)
+            val listener: (ByteArray) -> Unit = { payload ->
+                val owner = NameRegistry.parseClaimOwnerUid(payload, canonicalKey)
+                if (owner != null && owner != 0L) {
+                    ownerRef.set(owner)
+                    latch.countDown()
+                }
+            }
+            registerTopicListener(targetTopic, listener)
+            try {
+                client.forceResubscribe(targetTopic)
+                latch.await(700L, TimeUnit.MILLISECONDS)
+                val existing = ownerRef.get()
+                if (existing == 0L || existing == accountUid) {
+                    client.publish(
+                        targetTopic,
+                        NameRegistry.buildEncryptedClaim(displayName, accountUid),
+                        retain = true
+                    )
+                }
+            } catch (_: Exception) {
+            } finally {
+                if (unregisterTopicListener(targetTopic, listener)) {
+                    mqtt?.unsubscribe(targetTopic)
+                }
+            }
+        }, "glan-sync-my-name").apply { isDaemon = true }.start()
+    }
+
+    fun verifyAndClaimRename(
+        oldDisplayName: String,
+        newDisplayName: String,
+        accountUid: Long,
+        onResult: (NameRegistry.ClaimResult) -> Unit
+    ) {
+        val newKey = NameModerationFilter.canonicalNameKey(newDisplayName)
+        val oldKey = NameModerationFilter.canonicalNameKey(oldDisplayName)
+        if (newKey.length < 2) {
+            onResult(NameRegistry.ClaimResult.Claimed)
+            return
+        }
+
+        // 1. Verifica imediatamente os servidores públicos abertos ao vivo
+        if (newKey != oldKey) {
+            val emUsoNoLobby = roomsMap.values.any { room ->
+                NameModerationFilter.canonicalNameKey(room.hostName) == newKey
+            }
+            if (emUsoNoLobby) {
+                onResult(NameRegistry.ClaimResult.AlreadyTaken)
+                return
+            }
+        }
+
+        val activeClient = mqtt
+        if (!active.get() || activeClient == null || !activeClient.isConnected()) {
+            NameRegistry.checkAndClaimStandalone(newDisplayName, accountUid, onComplete = onResult)
+            return
+        }
+
+        val newTopic = NameRegistry.topicForDisplayName(newDisplayName)
+        if (newTopic == null) {
+            onResult(NameRegistry.ClaimResult.Claimed)
+            return
+        }
+
+        Thread({
+            val latch = CountDownLatch(1)
+            val ownerRef = AtomicLong(0L)
+            val listener: (ByteArray) -> Unit = { payload ->
+                val owner = NameRegistry.parseClaimOwnerUid(payload, newKey)
+                if (owner != null && owner != 0L) {
+                    ownerRef.set(owner)
+                    latch.countDown()
+                }
+            }
+
+            registerTopicListener(newTopic, listener)
+            try {
+                activeClient.forceResubscribe(newTopic)
+                latch.await(650L, TimeUnit.MILLISECONDS)
+                val owner = ownerRef.get()
+                if (owner != 0L && owner != accountUid) {
+                    onResult(NameRegistry.ClaimResult.AlreadyTaken)
+                    return@Thread
+                }
+
+                // Registra o novo nome para esta conta e libera o antigo se mudou a chave
+                activeClient.publish(
+                    newTopic,
+                    NameRegistry.buildEncryptedClaim(newDisplayName, accountUid),
+                    retain = true
+                )
+                val oldTopic = NameRegistry.topicForDisplayName(oldDisplayName)
+                if (oldTopic != null && oldTopic != newTopic) {
+                    activeClient.publish(oldTopic, ByteArray(0), retain = true)
+                }
+                onResult(NameRegistry.ClaimResult.Claimed)
+            } catch (_: Exception) {
+                onResult(NameRegistry.ClaimResult.Claimed)
+            } finally {
+                if (unregisterTopicListener(newTopic, listener)) {
+                    mqtt?.unsubscribe(newTopic)
+                }
+            }
+        }, "glan-rename-check").apply { isDaemon = true }.start()
+    }
 
     fun setAutoPingEnabled(enabled: Boolean) {
         autoPingEnabled = enabled

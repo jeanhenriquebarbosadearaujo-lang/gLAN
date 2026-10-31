@@ -1,7 +1,6 @@
 package com.gdroidlan.app.auth
 
 import android.content.Context
-import com.gdroidlan.app.crypto.RoomCrypto
 import java.security.SecureRandom
 
 object AccountManagerStore {
@@ -25,13 +24,22 @@ object AccountManagerStore {
     private val rng = SecureRandom()
 
     fun sanitizeDisplayName(raw: String): String =
-        RoomCrypto.cleanSafeText(raw, 24)
+        when (val res = NameModerationFilter.validateDisplayName(raw)) {
+            is NameModerationFilter.CheckResult.Allowed -> res.sanitized
+            is NameModerationFilter.CheckResult.Rejected -> ""
+        }
+
+    fun generateCandidateUid(): Long {
+        var uid = rng.nextLong()
+        if (uid == 0L) uid = 1L
+        return uid
+    }
 
     fun getActiveAccount(context: Context): UserAccount? {
         val prefs = context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
-        val savedName = prefs.getString(KEY_DISPLAY_NAME, null)
-            ?.let { sanitizeDisplayName(it) }
-            ?.takeIf { it.length >= 2 }
+        val rawSaved = prefs.getString(KEY_DISPLAY_NAME, null) ?: return null
+        val savedName = com.gdroidlan.app.crypto.RoomCrypto.cleanSafeText(rawSaved, 24)
+            .takeIf { it.length >= 2 }
             ?: return null
         val uid = prefs.getLong(KEY_ACCOUNT_UID, 0L)
         if (uid == 0L) return null
@@ -43,18 +51,21 @@ object AccountManagerStore {
         )
     }
 
-    fun createSingleAccount(context: Context, rawDisplayName: String): CreateResult {
+    fun createSingleAccount(
+        context: Context,
+        rawDisplayName: String,
+        preGeneratedUid: Long = 0L
+    ): CreateResult {
         getActiveAccount(context)?.let { existing ->
             return CreateResult.Success(existing)
         }
 
-        val cleanName = sanitizeDisplayName(rawDisplayName)
-        if (cleanName.length < 2) {
-            return CreateResult.Error("Informe um nome válido com pelo menos 2 caracteres.")
+        val cleanName = when (val chk = NameModerationFilter.validateDisplayName(rawDisplayName)) {
+            is NameModerationFilter.CheckResult.Allowed -> chk.sanitized
+            is NameModerationFilter.CheckResult.Rejected -> return CreateResult.Error(chk.reason)
         }
 
-        var uid = rng.nextLong()
-        if (uid == 0L) uid = 1L
+        val uid = if (preGeneratedUid != 0L) preGeneratedUid else generateCandidateUid()
         val tag = formatTag(uid)
 
         context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
@@ -65,6 +76,29 @@ object AccountManagerStore {
             .apply()
 
         return CreateResult.Success(UserAccount(cleanName, uid, tag))
+    }
+
+    fun renameActiveAccount(context: Context, rawNewDisplayName: String): CreateResult {
+        val current = getActiveAccount(context)
+            ?: return CreateResult.Error("Nenhuma conta ativa encontrada.")
+
+        val cleanName = when (val chk = NameModerationFilter.validateDisplayName(rawNewDisplayName)) {
+            is NameModerationFilter.CheckResult.Allowed -> chk.sanitized
+            is NameModerationFilter.CheckResult.Rejected -> return CreateResult.Error(chk.reason)
+        }
+
+        context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_DISPLAY_NAME, cleanName)
+            .apply()
+
+        return CreateResult.Success(
+            UserAccount(
+                displayName = cleanName,
+                accountUid = current.accountUid,
+                accountTag = current.accountTag
+            )
+        )
     }
 
     private fun formatTag(uid: Long): String {
