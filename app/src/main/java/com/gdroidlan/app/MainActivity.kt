@@ -20,9 +20,11 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.GravityCompat
 import com.gdroidlan.app.auth.AccountManagerStore
 import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.databinding.ActivityMainBinding
@@ -33,10 +35,18 @@ import com.gdroidlan.app.vpn.GdroidLanVpnService
 import com.gdroidlan.app.vpn.TunnelProtocol
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import java.text.Normalizer
 
 class MainActivity : AppCompatActivity() {
 
+    private enum class AbaPrincipal {
+        SERVIDORES_PUBLICOS,
+        ENTRAR_SALA,
+        CRIAR_SERVIDOR
+    }
+
     companion object {
+        private const val CREDITO_AUTOR = "Jean Henrique"
         private const val CREDITO_TIKTOK_HANDLE = ".memze"
         private const val CREDITO_TIKTOK_URL = "https://www.tiktok.com/@.memze"
     }
@@ -47,10 +57,11 @@ class MainActivity : AppCompatActivity() {
     private var toastAtual: Toast? = null
 
     private var contaAtiva: AccountManagerStore.UserAccount? = null
-    private var modoHostSelecionado = true
+    private var abaSelecionada: AbaPrincipal = AbaPrincipal.SERVIDORES_PUBLICOS
     private var salaPublicaSelecionada = false
     private var codigoHostAtual = ""
     private var limiteJogadores = TunnelProtocol.MAX_TOTAL_PLAYERS
+    private var filtroPesquisaServidor = ""
 
     private var aguardandoPermissaoParaHost = true
     private var codigoPendenteConexao = ""
@@ -180,10 +191,12 @@ class MainActivity : AppCompatActivity() {
 
         val versaoInstalada = obterVersaoInstalada()
         b.txtVersaoTopo.text = "v$versaoInstalada"
-        b.txtVersaoCard.text = "Versão $versaoInstalada"
+        b.txtVersaoMenu.text = "v$versaoInstalada"
+        b.txtRodapeMenu.text = "TikTok: $CREDITO_TIKTOK_HANDLE • Versão $versaoInstalada"
+        b.txtContaTopo.text = "Conta: ${conta.displayName}"
+        b.txtContaMenu.text = "Conta: ${conta.displayName}"
 
         pedirPermissaoNotificacaoSeNecessario()
-        b.txtContaTopo.text = "Conta: ${conta.displayName}"
 
         codigoHostAtual = prefs.getString("host_room_code", null)
             ?.takeIf { it.length >= 6 }
@@ -208,11 +221,24 @@ class MainActivity : AppCompatActivity() {
             b.edtCodigoAmigo.setText(salvo)
         }
 
+        configurarMenuGaveta(versaoInstalada)
+        configurarPesquisaServidores()
         configurarVisibilidadeHost()
-        configurarAbasModo()
+        configurarAbasPrincipais()
         configurarSeletorCapacidade()
         configurarBotoesPrincipais()
-        configurarSecaoCreditos()
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (b.drawerPrincipal.isDrawerOpen(GravityCompat.END)) {
+                    b.drawerPrincipal.closeDrawer(GravityCompat.END)
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
 
         GdroidLanVpnService.onManualPongToast = { rtt, modo ->
             runOnUiThread {
@@ -256,9 +282,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "2.6"
+            pInfo.versionName ?: "2.7"
         } catch (_: Exception) {
-            "2.6"
+            "2.7"
         }
     }
 
@@ -269,24 +295,136 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun configurarSecaoCreditos() {
-        b.btnCopiarTiktok.setOnClickListener {
-            copiarTexto("TikTok Jean Henrique", CREDITO_TIKTOK_HANDLE)
-            aplicarCooldownBotaoRapido(b.btnCopiarTiktok, 1_500L, "Copiado")
-            toast("TikTok $CREDITO_TIKTOK_HANDLE copiado.")
-        }
+    // =========================================================================
+    // MENU LATERAL (TRÊS TRACINHOS): CONFIGURAÇÕES, PRIVACIDADE, TERMOS, CRÉDITOS
+    // =========================================================================
 
-        b.btnAbrirTiktok.setOnClickListener {
-            aplicarCooldownBotaoRapido(b.btnAbrirTiktok, 1_500L)
-            try {
-                val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(CREDITO_TIKTOK_URL))
-                startActivity(viewIntent)
-            } catch (_: Exception) {
-                copiarTexto("TikTok Jean Henrique", CREDITO_TIKTOK_HANDLE)
-                toast("TikTok $CREDITO_TIKTOK_HANDLE copiado.")
+    private fun configurarMenuGaveta(versao: String) {
+        b.btnMenuLateral.setOnClickListener {
+            if (b.drawerPrincipal.isDrawerOpen(GravityCompat.END)) {
+                b.drawerPrincipal.closeDrawer(GravityCompat.END)
+            } else {
+                b.drawerPrincipal.openDrawer(GravityCompat.END)
             }
         }
+
+        b.btnMenuConfiguracoes.setOnClickListener {
+            b.drawerPrincipal.closeDrawer(GravityCompat.END)
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Configurações")
+                .setMessage("Futura atualização")
+                .setPositiveButton("OK", null)
+                .show()
+        }
+
+        b.btnMenuPrivacidade.setOnClickListener {
+            b.drawerPrincipal.closeDrawer(GravityCompat.END)
+            mostrarDialogoPrivacidade()
+        }
+
+        b.btnMenuTermos.setOnClickListener {
+            b.drawerPrincipal.closeDrawer(GravityCompat.END)
+            mostrarDialogoTermos()
+        }
+
+        b.btnMenuCreditos.setOnClickListener {
+            b.drawerPrincipal.closeDrawer(GravityCompat.END)
+            mostrarDialogoCreditos(versao)
+        }
     }
+
+    private fun mostrarDialogoPrivacidade() {
+        val texto =
+            "1. Identificação Local\n" +
+            "O gLAN solicita apenas um nome de exibição na primeira abertura para identificar você dentro das salas. " +
+            "Não exigimos senha, e-mail, número de telefone, contatos, fotos nem localização GPS. " +
+            "Sua conta única fica gravada somente no armazenamento interno desta instalação (sem backup em nuvem).\n\n" +
+            "2. Uso da Permissão de VPN (Split-Tunnel)\n" +
+            "A interface VPN do Android é usada exclusivamente para rotear a sub-rede virtual privada 10.10.0.0/24 entre os jogadores da mesma sala. " +
+            "O restante do tráfego de internet do seu aparelho não é interceptado, armazenado nem redirecionado pelo gLAN.\n\n" +
+            "3. Criptografia e Dados de Sessão\n" +
+            "Os pacotes da sala utilizam criptografia ponta a ponta (ECDH P-256 + AES-128-GCM) e assinatura digital ECDSA. " +
+            "Endereços de rede temporários são utilizados apenas em memória durante a sessão ativa para conectar os participantes e descartados imediatamente ao sair da sala."
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Política de Privacidade")
+            .setMessage(texto)
+            .setPositiveButton("Entendi", null)
+            .show()
+    }
+
+    private fun mostrarDialogoTermos() {
+        val texto =
+            "1. Finalidade do Aplicativo\n" +
+            "O gLAN é uma ferramenta de rede virtual P2P criada para facilitar partidas multiplayer em estilo LAN entre amigos e na lista de servidores públicos.\n\n" +
+            "2. Regras de Uso e Convivência\n" +
+            "Ao criar ou entrar em Salas Públicas, você concorda em não utilizar nomes ou títulos ofensivos e em não tentar sobrecarregar, fraudar ou prejudicar a conexão de outros usuários. " +
+            "O anfitrião de cada sala possui autonomia para remover ou bloquear participantes da sua sessão.\n\n" +
+            "3. Segurança e Responsabilidade\n" +
+            "Mantenha códigos de Salas Privadas apenas com pessoas de confiança. " +
+            "O aplicativo é disponibilizado de forma gratuita no estado em que se encontra, sem vínculo oficial com marcas ou jogos de terceiros."
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Termos de Serviço")
+            .setMessage(texto)
+            .setPositiveButton("Aceitar e Fechar", null)
+            .show()
+    }
+
+    private fun mostrarDialogoCreditos(versao: String) {
+        val texto =
+            "Criador e Desenvolvedor:\n" +
+            "$CREDITO_AUTOR\n\n" +
+            "TikTok Oficial:\n" +
+            "$CREDITO_TIKTOK_HANDLE\n\n" +
+            "Versão do Aplicativo:\n" +
+            "gLAN v$versao\n\n" +
+            "Arquitetura:\n" +
+            "Rede Virtual P2P com Criptografia E2EE (ECDH P-256 + ECDSA + AES-128-GCM) e Firewall Interno."
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Créditos e Versão")
+            .setMessage(texto)
+            .setPositiveButton("Abrir TikTok") { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(CREDITO_TIKTOK_URL)))
+                } catch (_: Exception) {
+                    copiarTexto("TikTok $CREDITO_AUTOR", CREDITO_TIKTOK_HANDLE)
+                    toast("TikTok $CREDITO_TIKTOK_HANDLE copiado.")
+                }
+            }
+            .setNeutralButton("Copiar TikTok") { _, _ ->
+                copiarTexto("TikTok $CREDITO_AUTOR", CREDITO_TIKTOK_HANDLE)
+                toast("TikTok $CREDITO_TIKTOK_HANDLE copiado.")
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    // =========================================================================
+    // PESQUISA EM SERVIDORES PÚBLICOS
+    // =========================================================================
+
+    private fun normalizarParaBusca(texto: String): String {
+        val semAcento = Normalizer.normalize(texto, Normalizer.Form.NFD)
+            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
+        return semAcento.lowercase().trim()
+    }
+
+    private fun configurarPesquisaServidores() {
+        b.edtPesquisaServidor.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                filtroPesquisaServidor = s?.toString().orEmpty()
+                renderizarSalasPublicas(cacheSalasPublicas, cacheDiretorioConectado)
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+    }
+
+    // =========================================================================
+    // CONTROLES DE ESTADO E COOLDOWNS
+    // =========================================================================
 
     private fun isSessaoAtiva(snap: GdroidLanVpnService.TunnelSnapshot = GdroidLanVpnService.currentSnapshot): Boolean {
         return snap.phase != GdroidLanVpnService.StatusPhase.OFFLINE &&
@@ -462,51 +600,107 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun configurarAbasModo() {
+    // =========================================================================
+    // TRÊS ABAS PRINCIPAIS: SERVIDORES PÚBLICOS | ENTRAR NA SALA | CRIAR SERVIDOR
+    // =========================================================================
+
+    private fun idBotaoDaAba(aba: AbaPrincipal): Int = when (aba) {
+        AbaPrincipal.SERVIDORES_PUBLICOS -> R.id.btnModoPublicos
+        AbaPrincipal.ENTRAR_SALA -> R.id.btnModoEntrar
+        AbaPrincipal.CRIAR_SERVIDOR -> R.id.btnModoCriar
+    }
+
+    private fun abaPeloIdBotao(checkedId: Int): AbaPrincipal = when (checkedId) {
+        R.id.btnModoEntrar -> AbaPrincipal.ENTRAR_SALA
+        R.id.btnModoCriar -> AbaPrincipal.CRIAR_SERVIDOR
+        else -> AbaPrincipal.SERVIDORES_PUBLICOS
+    }
+
+    private fun estilizarAbasSelecionadas() {
+        val botoes = listOf(
+            b.btnModoPublicos to (abaSelecionada == AbaPrincipal.SERVIDORES_PUBLICOS),
+            b.btnModoEntrar to (abaSelecionada == AbaPrincipal.ENTRAR_SALA),
+            b.btnModoCriar to (abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR)
+        )
+        for ((botao, selecionado) in botoes) {
+            if (selecionado) {
+                botao.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2900D4FF"))
+                botao.setTextColor(Color.parseColor("#00D4FF"))
+                botao.strokeColor = ColorStateList.valueOf(Color.parseColor("#00D4FF"))
+            } else {
+                botao.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+                botao.setTextColor(Color.parseColor("#E2E8F0"))
+                botao.strokeColor = ColorStateList.valueOf(Color.parseColor("#2A3A52"))
+            }
+        }
+    }
+
+    private fun configurarAbasPrincipais() {
         val snap = GdroidLanVpnService.currentSnapshot
         val ativo = isSessaoAtiva(snap)
-        modoHostSelecionado = if (ativo) snap.isHost else true
+        abaSelecionada = if (ativo) {
+            if (snap.isHost) AbaPrincipal.CRIAR_SERVIDOR else AbaPrincipal.SERVIDORES_PUBLICOS
+        } else {
+            AbaPrincipal.SERVIDORES_PUBLICOS
+        }
 
-        b.grupoModo.check(if (modoHostSelecionado) R.id.btnModoHost else R.id.btnModoCliente)
-        atualizarVisibilidadeModo(ativo)
+        b.grupoModo.check(idBotaoDaAba(abaSelecionada))
+        estilizarAbasSelecionadas()
+        atualizarVisibilidadeAbas(ativo)
 
         b.grupoModo.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked) return@addOnButtonCheckedListener
             if (verificandoSala) {
-                b.grupoModo.check(if (modoHostSelecionado) R.id.btnModoHost else R.id.btnModoCliente)
+                b.grupoModo.check(idBotaoDaAba(abaSelecionada))
+                estilizarAbasSelecionadas()
                 return@addOnButtonCheckedListener
             }
             if (isSessaoAtiva()) {
-                val idCorreto = if (GdroidLanVpnService.currentSnapshot.isHost) R.id.btnModoHost else R.id.btnModoCliente
-                if (checkedId != idCorreto) {
-                    b.grupoModo.check(idCorreto)
+                val idTravado = idBotaoDaAba(abaSelecionada)
+                if (checkedId != idTravado) {
+                    b.grupoModo.check(idTravado)
+                    estilizarAbasSelecionadas()
                     toast("Encerre a conexão atual antes de trocar de aba.")
                 }
                 return@addOnButtonCheckedListener
             }
+
+            val novaAba = abaPeloIdBotao(checkedId)
             val agora = SystemClock.elapsedRealtime()
-            val novoModoHost = (checkedId == R.id.btnModoHost)
-            if (novoModoHost != modoHostSelecionado && agora - ultimoToqueAbaMs < 350L) {
-                b.grupoModo.check(if (modoHostSelecionado) R.id.btnModoHost else R.id.btnModoCliente)
+            if (novaAba != abaSelecionada && agora - ultimoToqueAbaMs < 300L) {
+                b.grupoModo.check(idBotaoDaAba(abaSelecionada))
+                estilizarAbasSelecionadas()
                 return@addOnButtonCheckedListener
             }
             ultimoToqueAbaMs = agora
-            modoHostSelecionado = novoModoHost
+            abaSelecionada = novaAba
+            estilizarAbasSelecionadas()
             limparErroVerificacaoLocal()
-            atualizarVisibilidadeModo(ativo = false)
+            atualizarVisibilidadeAbas(ativo = false)
             renderizarEstado(GdroidLanVpnService.currentSnapshot)
         }
     }
 
-    private fun atualizarVisibilidadeModo(ativo: Boolean) {
-        if (modoHostSelecionado) {
-            b.cardHost.visibility = View.VISIBLE
-            b.secaoBuscaCliente.visibility = View.GONE
-            b.cardIpClienteConectado.visibility = View.GONE
-        } else {
-            b.cardHost.visibility = View.GONE
-            b.secaoBuscaCliente.visibility = if (ativo) View.GONE else View.VISIBLE
-            b.cardIpClienteConectado.visibility = if (ativo) View.VISIBLE else View.GONE
+    private fun atualizarVisibilidadeAbas(ativo: Boolean) {
+        when (abaSelecionada) {
+            AbaPrincipal.SERVIDORES_PUBLICOS -> {
+                b.cardHost.visibility = View.GONE
+                b.cardEntrarCodigo.visibility = View.GONE
+                b.cardServidoresPublicos.visibility = if (ativo) View.GONE else View.VISIBLE
+                b.cardIpClienteConectado.visibility = if (ativo) View.VISIBLE else View.GONE
+            }
+            AbaPrincipal.ENTRAR_SALA -> {
+                b.cardHost.visibility = View.GONE
+                b.cardServidoresPublicos.visibility = View.GONE
+                b.cardEntrarCodigo.visibility = if (ativo) View.GONE else View.VISIBLE
+                b.cardIpClienteConectado.visibility = if (ativo) View.VISIBLE else View.GONE
+            }
+            AbaPrincipal.CRIAR_SERVIDOR -> {
+                b.cardServidoresPublicos.visibility = View.GONE
+                b.cardEntrarCodigo.visibility = View.GONE
+                b.cardIpClienteConectado.visibility = View.GONE
+                b.cardHost.visibility = View.VISIBLE
+            }
         }
     }
 
@@ -577,7 +771,7 @@ class MainActivity : AppCompatActivity() {
             cooldownLobbyRefreshAteMs = agora + 5_000L
             dispararTickerCooldown()
             lobbyBrowser.refreshNow()
-            toast("Lista de salas públicas atualizada.")
+            toast("Lista de servidores atualizada.")
         }
 
         b.btnColarCodigoAmigo.setOnClickListener {
@@ -609,16 +803,20 @@ class MainActivity : AppCompatActivity() {
             }
 
             limparErroVerificacaoLocal()
-            if (modoHostSelecionado) {
-                solicitarVpnEIniciar(asHost = true, code = codigoHostAtual)
-            } else {
-                val digitado = RoomCrypto.normalizeRoomCode(b.edtCodigoAmigo.text?.toString().orEmpty())
-                if (digitado.length < 4) {
-                    exibirErroSalaLocal("CÓDIGO INVÁLIDO", "Digite um Código Privado válido ou escolha uma Sala Pública aberta.")
-                    return@setOnClickListener
+            when (abaSelecionada) {
+                AbaPrincipal.CRIAR_SERVIDOR -> {
+                    solicitarVpnEIniciar(asHost = true, code = codigoHostAtual)
                 }
-                prefs.edit().putString("last_friend_code", digitado).apply()
-                verificarExistenciaEEntrar(digitado)
+                AbaPrincipal.ENTRAR_SALA -> {
+                    val digitado = RoomCrypto.normalizeRoomCode(b.edtCodigoAmigo.text?.toString().orEmpty())
+                    if (digitado.length < 4) {
+                        exibirErroSalaLocal("CÓDIGO INVÁLIDO", "Digite um Código da Sala válido antes de conectar.")
+                        return@setOnClickListener
+                    }
+                    prefs.edit().putString("last_friend_code", digitado).apply()
+                    verificarExistenciaEEntrar(digitado)
+                }
+                AbaPrincipal.SERVIDORES_PUBLICOS -> { }
             }
         }
 
@@ -716,18 +914,31 @@ class MainActivity : AppCompatActivity() {
         conectadoAoDiretorio: Boolean
     ) {
         b.txtStatusLobby.text = when {
-            salas.isNotEmpty() -> if (salas.size == 1) "1 aberta" else "${salas.size} abertas"
+            salas.isNotEmpty() -> if (salas.size == 1) "1 aberto" else "${salas.size} abertos"
             conectadoAoDiretorio -> "Ao vivo"
             else -> "Sincronizando"
         }
 
+        val termoBusca = normalizarParaBusca(filtroPesquisaServidor)
+        val salasFiltradas = if (termoBusca.isBlank()) {
+            salas
+        } else {
+            salas.filter { s ->
+                normalizarParaBusca(s.roomTitle).contains(termoBusca) ||
+                    normalizarParaBusca(s.hostName).contains(termoBusca)
+            }
+        }
+
         b.containerSalasPublicas.removeAllViews()
-        if (salas.isEmpty()) {
+        if (salasFiltradas.isEmpty()) {
             b.txtSemSalasPublicas.visibility = View.VISIBLE
-            b.txtSemSalasPublicas.text = if (conectadoAoDiretorio) {
-                "Nenhuma sala pública aberta no momento."
-            } else {
-                "Buscando salas públicas abertas..."
+            b.txtSemSalasPublicas.text = when {
+                salas.isNotEmpty() && termoBusca.isNotBlank() ->
+                    "Nenhum servidor encontrado para \"${filtroPesquisaServidor.trim()}\"."
+                conectadoAoDiretorio ->
+                    "Nenhum servidor público aberto no momento."
+                else ->
+                    "Buscando servidores públicos abertos..."
             }
             return
         }
@@ -737,7 +948,7 @@ class MainActivity : AppCompatActivity() {
             isSessaoAtiva()
 
         b.txtSemSalasPublicas.visibility = View.GONE
-        for (sala in salas) {
+        for (sala in salasFiltradas) {
             val item = ItemPublicRoomBinding.inflate(layoutInflater, b.containerSalasPublicas, false)
             item.txtTituloSalaPublica.text = sala.roomTitle
             item.txtSubtituloSalaPublica.text = "Host: ${sala.hostName} • IP: ${TunnelProtocol.HOST_VIRTUAL_IP}"
@@ -825,44 +1036,50 @@ class MainActivity : AppCompatActivity() {
         val ativo = isSessaoAtiva(snap)
         val restPrincipal = segundosRestantes(cooldownPrincipalAteMs, agora)
 
-        when {
-            verificandoSala -> {
-                b.btnAcaoPrincipal.isEnabled = false
-                b.btnAcaoPrincipal.alpha = 0.7f
-                b.btnAcaoPrincipal.text = "VERIFICANDO SALA..."
-                b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00A8E8"))
-                b.btnAcaoPrincipal.setTextColor(Color.WHITE)
-            }
-            restPrincipal > 0 -> {
-                b.btnAcaoPrincipal.isEnabled = false
-                b.btnAcaoPrincipal.alpha = 0.6f
-                b.btnAcaoPrincipal.text = if (ativo) {
-                    if (snap.isHost) "SERVIDOR ATIVO (${restPrincipal}s)" else "CONECTADO (${restPrincipal}s)"
-                } else {
-                    "AGUARDE ${restPrincipal}s..."
+        if (!ativo && abaSelecionada == AbaPrincipal.SERVIDORES_PUBLICOS && !verificandoSala && restPrincipal == 0) {
+            b.btnAcaoPrincipal.visibility = View.GONE
+        } else {
+            b.btnAcaoPrincipal.visibility = View.VISIBLE
+            when {
+                verificandoSala -> {
+                    b.btnAcaoPrincipal.isEnabled = false
+                    b.btnAcaoPrincipal.alpha = 0.7f
+                    b.btnAcaoPrincipal.text = "VERIFICANDO SALA..."
+                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00A8E8"))
+                    b.btnAcaoPrincipal.setTextColor(Color.WHITE)
                 }
-                val cor = if (ativo) "#FF5252" else if (modoHostSelecionado) "#1890FF" else "#00A8E8"
-                b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
-                b.btnAcaoPrincipal.setTextColor(Color.WHITE)
-            }
-            ativo -> {
-                b.btnAcaoPrincipal.isEnabled = true
-                b.btnAcaoPrincipal.alpha = 1.0f
-                b.btnAcaoPrincipal.text = if (snap.isHost) "ENCERRAR SERVIDOR" else "SAIR DA SALA"
-                b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF5252"))
-                b.btnAcaoPrincipal.setTextColor(Color.WHITE)
-            }
-            else -> {
-                b.btnAcaoPrincipal.isEnabled = true
-                b.btnAcaoPrincipal.alpha = 1.0f
-                b.btnAcaoPrincipal.text = if (modoHostSelecionado) "INICIAR SERVIDOR" else "CONECTAR COM CÓDIGO"
-                val cor = if (modoHostSelecionado) "#1890FF" else "#00A8E8"
-                b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
-                b.btnAcaoPrincipal.setTextColor(Color.WHITE)
+                restPrincipal > 0 -> {
+                    b.btnAcaoPrincipal.isEnabled = false
+                    b.btnAcaoPrincipal.alpha = 0.6f
+                    b.btnAcaoPrincipal.text = if (ativo) {
+                        if (snap.isHost) "SERVIDOR ATIVO (${restPrincipal}s)" else "CONECTADO (${restPrincipal}s)"
+                    } else {
+                        "AGUARDE ${restPrincipal}s..."
+                    }
+                    val cor = if (ativo) "#FF5252" else if (abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR) "#1890FF" else "#00A8E8"
+                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
+                    b.btnAcaoPrincipal.setTextColor(Color.WHITE)
+                }
+                ativo -> {
+                    b.btnAcaoPrincipal.isEnabled = true
+                    b.btnAcaoPrincipal.alpha = 1.0f
+                    b.btnAcaoPrincipal.text = if (snap.isHost) "ENCERRAR SERVIDOR" else "SAIR DA SALA"
+                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF5252"))
+                    b.btnAcaoPrincipal.setTextColor(Color.WHITE)
+                }
+                else -> {
+                    b.btnAcaoPrincipal.isEnabled = true
+                    b.btnAcaoPrincipal.alpha = 1.0f
+                    val ehCriar = (abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR)
+                    b.btnAcaoPrincipal.text = if (ehCriar) "INICIAR SERVIDOR" else "CONECTAR NA SALA"
+                    val cor = if (ehCriar) "#1890FF" else "#00A8E8"
+                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
+                    b.btnAcaoPrincipal.setTextColor(Color.WHITE)
+                }
             }
         }
 
-        if (!ativo && !modoHostSelecionado) {
+        if (!ativo && abaSelecionada == AbaPrincipal.SERVIDORES_PUBLICOS) {
             renderizarSalasPublicas(cacheSalasPublicas, cacheDiretorioConectado)
         }
     }
@@ -875,11 +1092,19 @@ class MainActivity : AppCompatActivity() {
 
         gerenciarLobbyBrowserConformeEstado(snap)
 
-        if (ativo && modoHostSelecionado != snap.isHost) {
-            modoHostSelecionado = snap.isHost
-            b.grupoModo.check(if (modoHostSelecionado) R.id.btnModoHost else R.id.btnModoCliente)
+        if (ativo) {
+            if (snap.isHost && abaSelecionada != AbaPrincipal.CRIAR_SERVIDOR) {
+                abaSelecionada = AbaPrincipal.CRIAR_SERVIDOR
+                b.grupoModo.check(R.id.btnModoCriar)
+                estilizarAbasSelecionadas()
+            } else if (!snap.isHost && abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR) {
+                abaSelecionada = AbaPrincipal.SERVIDORES_PUBLICOS
+                b.grupoModo.check(R.id.btnModoPublicos)
+                estilizarAbasSelecionadas()
+            }
         }
-        atualizarVisibilidadeModo(ativo)
+
+        atualizarVisibilidadeAbas(ativo)
         atualizarTravaConfiguracoesHost(ativoComoHost = ativo && snap.isHost, snap = snap)
 
         val erroLocal = erroVerificacaoLocal
@@ -958,10 +1183,12 @@ class MainActivity : AppCompatActivity() {
             renderizarListaParticipantes(snap)
         }
 
+        b.edtPesquisaServidor.isEnabled = !ativo
         b.edtCodigoAmigo.isEnabled = !ativo && !verificandoSala
         b.btnColarCodigoAmigo.isEnabled = !ativo && !verificandoSala
-        b.btnModoHost.isEnabled = !verificandoSala
-        b.btnModoCliente.isEnabled = !verificandoSala
+        b.btnModoPublicos.isEnabled = !verificandoSala
+        b.btnModoEntrar.isEnabled = !verificandoSala
+        b.btnModoCriar.isEnabled = !verificandoSala
 
         atualizarBotaoPrincipalESalas(snap)
     }

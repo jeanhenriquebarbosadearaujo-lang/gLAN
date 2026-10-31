@@ -5,21 +5,19 @@
 <h1 align="center">gLAN — Rede Virtual P2P para Multiplayer</h1>
 
 <p align="center">
-  <b>Conecte salas multiplayer do GDroid e jogos LAN à distância com Salas Públicas Abertas ou Privadas, criptografia E2EE par-a-par (ECDH P-256 + ECDSA + AES-128-GCM), firewall interno de portas, até 8 jogadores e moderação em tempo real.</b>
+  <b>Conecte salas multiplayer do GDroid e jogos LAN à distância com lista inicial de Servidores Públicos com busca por nome, entrada por código, criptografia E2EE par-a-par (ECDH P-256 + ECDSA + AES-128-GCM), firewall interno, até 8 jogadores e moderação em tempo real.</b>
 </p>
 
 ---
 
 ## Principais Recursos
 
-- **Segurança Reforçada (v2.6):**
-  - Acordo de chaves **ECDH P-256** individual por jogador (Forward Secrecy par-a-par) + **AES-128-GCM** com janela anti-replay de 512 pacotes.
-  - Assinatura digital **ECDSA P-256 (`SHA256withECDSA`)** nos anúncios de Salas Públicas, lista de participantes, expulsões e encerramento de sala (impede falsificação ou derrubada de salas públicas).
-  - **Firewall IPv4 no Túnel Virtual:** bloqueio estrito contra falsificação de IP interno (*Anti-IP-Spoofing*) e bloqueio automático de portas críticas do Android (ADB, SSH, Telnet, SMB).
-  - Conexão de sinalização exclusivamente via **TLS 1.2/1.3 (porta 8883)** com validação estrita de hostname X.509 e `usesCleartextTraffic="false"`.
-- **Salas Públicas ou Privadas (Travadas em Sessão):** visibilidade e limite de **2 a 8 jogadores** (`-` / `+`) configuráveis antes de abrir e travados durante a partida.
-- **Verificação Instantânea de Sala Existente + Cooldowns Anti-Spam:** detecta imediatamente salas inexistentes, lotadas ou bloqueadas sem entrar em falso estado de conexão.
-- **Conta Única por Instalação (Apenas Nome):** vinculada ao aparelho (`allowBackup="false"`), sem senha.
+- **Três Abas Principais Organizadas:**
+  1. **Servidores Públicos (Tela Inicial):** exibe em tempo real todos os servidores públicos abertos com barra de pesquisa por nome da sala ou do anfitrião e entrada com 1 toque.
+  2. **Entrar na Sala:** entrada rápida por código de 6 caracteres com verificação prévia de existência da sala.
+  3. **Criar Servidor:** escolha entre **Privada** ou **Pública**, limite de **2 a 8 jogadores** (`-` / `+`) e moderação ao vivo (visibilidade e vagas travadas enquanto a sala estiver ativa).
+- **Menu Lateral (Gaveta):** acesso organizado a **Configurações**, **Política de Privacidade**, **Termos de Serviço** e **Créditos**.
+- **Segurança Reforçada:** ECDH P-256 par-a-par + assinatura digital ECDSA P-256 + AES-128-GCM com janela anti-replay + Firewall interno IPv4 + TLS 1.2/1.3 obrigatório.
 
 ---
 
@@ -27,4 +25,4 @@
 
 - **Criador:** Jean Henrique
 - **TikTok:** `.memze`
-- **Versão Atual:** `2.6`
+- **Versão Atual:** `2.7`

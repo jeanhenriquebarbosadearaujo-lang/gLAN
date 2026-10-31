@@ -1359,7 +1359,7 @@ class GdroidLanVpnService : VpnService() {
 
         val notif: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_vpn)
-            .setContentTitle("gLAN v2.6 Ativo")
+            .setContentTitle("gLAN Ativo")
             .setContentText(contentText)
             .setOngoing(true)
             .setContentIntent(openIntent)
