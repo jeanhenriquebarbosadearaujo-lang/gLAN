@@ -28,6 +28,8 @@ class AuthActivity : AppCompatActivity() {
 
         b = ActivityAuthBinding.inflate(layoutInflater)
         setContentView(b.root)
+        b.txtRodapeAuth.text =
+            "gLAN v${com.gdroidlan.app.update.OfficialVersionCert.BUILT_VERSION_NAME} • Criado por Jean Henrique • TikTok: .memze"
 
         b.edtNomeExibicao.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
@@ -63,7 +65,7 @@ class AuthActivity : AppCompatActivity() {
         b.txtErroConta.visibility = View.GONE
         b.edtNomeExibicao.isEnabled = false
         b.btnConfirmarConta.isEnabled = false
-        b.btnConfirmarConta.text = "VERIFICANDO NOME..."
+        b.btnConfirmarConta.text = "Verificando nome..."
 
         NameRegistry.checkAndClaimStandalone(nomeLimpo, uidCandidato) { claimRes ->
             runOnUiThread {
@@ -74,7 +76,7 @@ class AuthActivity : AppCompatActivity() {
                     is NameRegistry.ClaimResult.AlreadyTaken -> {
                         b.edtNomeExibicao.isEnabled = true
                         b.btnConfirmarConta.isEnabled = true
-                        b.btnConfirmarConta.text = "CRIAR CONTA E ENTRAR"
+                        b.btnConfirmarConta.text = "Continuar"
                         b.txtErroConta.text = "Já existe um usuário com esse nome."
                         b.txtErroConta.visibility = View.VISIBLE
                     }
@@ -87,7 +89,7 @@ class AuthActivity : AppCompatActivity() {
                             is AccountManagerStore.CreateResult.Error -> {
                                 b.edtNomeExibicao.isEnabled = true
                                 b.btnConfirmarConta.isEnabled = true
-                                b.btnConfirmarConta.text = "CRIAR CONTA E ENTRAR"
+                                b.btnConfirmarConta.text = "Continuar"
                                 b.txtErroConta.text = res.message
                                 b.txtErroConta.visibility = View.VISIBLE
                             }

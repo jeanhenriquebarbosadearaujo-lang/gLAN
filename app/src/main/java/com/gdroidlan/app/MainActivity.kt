@@ -342,9 +342,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.3"
+            pInfo.versionName ?: "3.4"
         } catch (_: Exception) {
-            "3.3"
+            "3.4"
         }
     }
 
@@ -395,9 +395,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun corPorPing(pingMs: Long): Int = when {
         pingMs <= 0L -> Color.parseColor("#94A3B8")
-        pingMs <= 80L -> Color.parseColor("#00E676")
-        pingMs <= 170L -> Color.parseColor("#FFCA28")
-        else -> Color.parseColor("#FF5252")
+        pingMs <= 80L -> Color.parseColor("#10B981")
+        pingMs <= 170L -> Color.parseColor("#F59E0B")
+        else -> Color.parseColor("#EF4444")
     }
 
     // =========================================================================
@@ -448,11 +448,11 @@ class MainActivity : AppCompatActivity() {
     private fun atualizarStatusBateriaNoDialogo(cfg: DialogSettingsBinding) {
         if (estaSemRestricaoBateria()) {
             cfg.txtStatusBateriaConfig.text = "Status atual: Sem restrição de bateria (Ativo)"
-            cfg.txtStatusBateriaConfig.setTextColor(Color.parseColor("#00E676"))
+            cfg.txtStatusBateriaConfig.setTextColor(Color.parseColor("#10B981"))
             cfg.btnAbrirAjusteBateria.text = "Revisar Ajuste de Bateria"
         } else {
             cfg.txtStatusBateriaConfig.text = "Status atual: Economia de bateria ativa"
-            cfg.txtStatusBateriaConfig.setTextColor(Color.parseColor("#FFCA28"))
+            cfg.txtStatusBateriaConfig.setTextColor(Color.parseColor("#F59E0B"))
             cfg.btnAbrirAjusteBateria.text = "Desativar Restrição de Bateria"
         }
     }
@@ -493,7 +493,7 @@ class MainActivity : AppCompatActivity() {
             prof.btnSalvarPerfil.isEnabled = false
             prof.btnSalvarPerfil.alpha = 0.45f
             prof.txtMensagemPerfil.text = "Encerre ou saia da sala atual antes de alterar seu nome."
-            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FFCA28"))
+            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#F59E0B"))
             prof.txtMensagemPerfil.visibility = View.VISIBLE
         }
 
@@ -514,7 +514,7 @@ class MainActivity : AppCompatActivity() {
         prof.btnSalvarPerfil.setOnClickListener {
             if (isSessaoAtiva()) {
                 prof.txtMensagemPerfil.text = "Encerre a sala atual antes de alterar seu nome."
-                prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FFCA28"))
+                prof.txtMensagemPerfil.setTextColor(Color.parseColor("#F59E0B"))
                 prof.txtMensagemPerfil.visibility = View.VISIBLE
                 return@setOnClickListener
             }
@@ -523,7 +523,7 @@ class MainActivity : AppCompatActivity() {
             val rest = segundosRestantes(cooldownRenomearAteMs, agora)
             if (rest > 0) {
                 prof.txtMensagemPerfil.text = "Aguarde ${rest}s antes de alterar o nome novamente."
-                prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FFCA28"))
+                prof.txtMensagemPerfil.setTextColor(Color.parseColor("#F59E0B"))
                 prof.txtMensagemPerfil.visibility = View.VISIBLE
                 return@setOnClickListener
             }
@@ -533,7 +533,7 @@ class MainActivity : AppCompatActivity() {
                 is NameModerationFilter.CheckResult.Allowed -> mod.sanitized
                 is NameModerationFilter.CheckResult.Rejected -> {
                     prof.txtMensagemPerfil.text = mod.reason
-                    prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FF5252"))
+                    prof.txtMensagemPerfil.setTextColor(Color.parseColor("#EF4444"))
                     prof.txtMensagemPerfil.visibility = View.VISIBLE
                     return@setOnClickListener
                 }
@@ -550,7 +550,7 @@ class MainActivity : AppCompatActivity() {
             prof.btnFecharPerfil.isEnabled = false
             prof.btnSalvarPerfil.text = "Verificando..."
             prof.txtMensagemPerfil.text = "Verificando disponibilidade do nome..."
-            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#00D4FF"))
+            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#38BDF8"))
             prof.txtMensagemPerfil.visibility = View.VISIBLE
 
             lobbyBrowser.verifyAndClaimRename(
@@ -568,7 +568,7 @@ class MainActivity : AppCompatActivity() {
                             prof.btnFecharPerfil.isEnabled = true
                             prof.btnSalvarPerfil.text = "Salvar Nome"
                             prof.txtMensagemPerfil.text = "Já existe um usuário com esse nome."
-                            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FF5252"))
+                            prof.txtMensagemPerfil.setTextColor(Color.parseColor("#EF4444"))
                             prof.txtMensagemPerfil.visibility = View.VISIBLE
                         }
                         is NameRegistry.ClaimResult.Claimed -> {
@@ -591,7 +591,7 @@ class MainActivity : AppCompatActivity() {
                                     prof.btnFecharPerfil.isEnabled = true
                                     prof.btnSalvarPerfil.text = "Salvar Nome"
                                     prof.txtMensagemPerfil.text = salvo.message
-                                    prof.txtMensagemPerfil.setTextColor(Color.parseColor("#FF5252"))
+                                    prof.txtMensagemPerfil.setTextColor(Color.parseColor("#EF4444"))
                                     prof.txtMensagemPerfil.visibility = View.VISIBLE
                                 }
                             }
@@ -818,6 +818,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun dpToPx(dp: Int): Int =
+        (dp * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun estilizarVisibilidadeHost() {
+        val opcoes = listOf(
+            b.btnSalaPrivada to (!salaPublicaSelecionada),
+            b.btnSalaPublica to salaPublicaSelecionada
+        )
+        for ((botao, ativo) in opcoes) {
+            if (ativo) {
+                botao.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#1E3152"))
+                botao.setTextColor(Color.parseColor("#F1F5F9"))
+                botao.iconTint = ColorStateList.valueOf(Color.parseColor("#38BDF8"))
+                botao.strokeWidth = dpToPx(1)
+                botao.strokeColor = ColorStateList.valueOf(Color.parseColor("#4738BDF8"))
+            } else {
+                botao.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+                botao.setTextColor(Color.parseColor("#94A3B8"))
+                botao.iconTint = ColorStateList.valueOf(Color.parseColor("#64748B"))
+                botao.strokeWidth = 0
+            }
+        }
+    }
+
     private fun atualizarAvisoProtecaoIpHost() {
         if (!salaPublicaSelecionada) {
             b.txtInfoProtecaoIpPublica.visibility = View.GONE
@@ -827,7 +851,7 @@ class MainActivity : AppCompatActivity() {
         if (prefProtegerIpPublico) {
             b.txtInfoProtecaoIpPublica.text =
                 "Proteção de IP ativa: somente Ponte TLS (seu IP real fica oculto)."
-            b.txtInfoProtecaoIpPublica.setTextColor(Color.parseColor("#00E676"))
+            b.txtInfoProtecaoIpPublica.setTextColor(Color.parseColor("#10B981"))
         } else {
             b.txtInfoProtecaoIpPublica.text =
                 "Modo P2P híbrido ativo (ative Proteção de IP em Configurações para ocultar seu IP)."
@@ -836,25 +860,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun configurarVisibilidadeHost() {
-        b.grupoVisibilidade.check(if (salaPublicaSelecionada) R.id.btnSalaPublica else R.id.btnSalaPrivada)
+        estilizarVisibilidadeHost()
         b.layoutNomeSalaPublica.visibility = if (salaPublicaSelecionada) View.VISIBLE else View.GONE
         atualizarAvisoProtecaoIpHost()
 
-        b.grupoVisibilidade.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (!isChecked) return@addOnButtonCheckedListener
+        val alternarVisibilidade: (Boolean) -> Unit = { publica ->
             if (isSessaoAtiva()) {
-                val idTravado = if (salaPublicaSelecionada) R.id.btnSalaPublica else R.id.btnSalaPrivada
-                if (checkedId != idTravado) {
-                    b.grupoVisibilidade.check(idTravado)
+                if (publica != salaPublicaSelecionada) {
                     toast("Encerre o servidor antes de mudar a visibilidade da sala.")
                 }
-                return@addOnButtonCheckedListener
+            } else if (publica != salaPublicaSelecionada) {
+                salaPublicaSelecionada = publica
+                prefs.edit().putBoolean("host_is_public", salaPublicaSelecionada).apply()
+                estilizarVisibilidadeHost()
+                b.layoutNomeSalaPublica.visibility = if (salaPublicaSelecionada) View.VISIBLE else View.GONE
+                atualizarAvisoProtecaoIpHost()
             }
-            salaPublicaSelecionada = (checkedId == R.id.btnSalaPublica)
-            prefs.edit().putBoolean("host_is_public", salaPublicaSelecionada).apply()
-            b.layoutNomeSalaPublica.visibility = if (salaPublicaSelecionada) View.VISIBLE else View.GONE
-            atualizarAvisoProtecaoIpHost()
         }
+
+        b.btnSalaPrivada.setOnClickListener { alternarVisibilidade(false) }
+        b.btnSalaPublica.setOnClickListener { alternarVisibilidade(true) }
 
         b.edtNomeSalaPublica.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -974,18 +999,6 @@ class MainActivity : AppCompatActivity() {
     // TRÊS ABAS PRINCIPAIS: SERVIDORES PÚBLICOS | ENTRAR NA SALA | CRIAR SERVIDOR
     // =========================================================================
 
-    private fun idBotaoDaAba(aba: AbaPrincipal): Int = when (aba) {
-        AbaPrincipal.SERVIDORES_PUBLICOS -> R.id.btnModoPublicos
-        AbaPrincipal.ENTRAR_SALA -> R.id.btnModoEntrar
-        AbaPrincipal.CRIAR_SERVIDOR -> R.id.btnModoCriar
-    }
-
-    private fun abaPeloIdBotao(checkedId: Int): AbaPrincipal = when (checkedId) {
-        R.id.btnModoEntrar -> AbaPrincipal.ENTRAR_SALA
-        R.id.btnModoCriar -> AbaPrincipal.CRIAR_SERVIDOR
-        else -> AbaPrincipal.SERVIDORES_PUBLICOS
-    }
-
     private fun estilizarAbasSelecionadas() {
         val botoes = listOf(
             b.btnModoPublicos to (abaSelecionada == AbaPrincipal.SERVIDORES_PUBLICOS),
@@ -994,15 +1007,37 @@ class MainActivity : AppCompatActivity() {
         )
         for ((botao, selecionado) in botoes) {
             if (selecionado) {
-                botao.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2900D4FF"))
-                botao.setTextColor(Color.parseColor("#00D4FF"))
-                botao.strokeColor = ColorStateList.valueOf(Color.parseColor("#00D4FF"))
+                botao.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#1E3152"))
+                botao.setTextColor(Color.parseColor("#F1F5F9"))
+                botao.strokeWidth = dpToPx(1)
+                botao.strokeColor = ColorStateList.valueOf(Color.parseColor("#4738BDF8"))
             } else {
                 botao.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
-                botao.setTextColor(Color.parseColor("#E2E8F0"))
-                botao.strokeColor = ColorStateList.valueOf(Color.parseColor("#2A3A52"))
+                botao.setTextColor(Color.parseColor("#94A3B8"))
+                botao.strokeWidth = 0
             }
         }
+    }
+
+    private fun tentarSelecionarAba(novaAba: AbaPrincipal) {
+        if (verificandoSala) return
+        if (isSessaoAtiva()) {
+            if (novaAba != abaSelecionada) {
+                toast("Encerre a conexão atual antes de trocar de aba.")
+            }
+            return
+        }
+        if (novaAba == abaSelecionada) return
+
+        val agora = SystemClock.elapsedRealtime()
+        if (agora - ultimoToqueAbaMs < 260L) return
+        ultimoToqueAbaMs = agora
+
+        abaSelecionada = novaAba
+        estilizarAbasSelecionadas()
+        limparErroVerificacaoLocal()
+        atualizarVisibilidadeAbas(ativo = false)
+        renderizarEstado(GdroidLanVpnService.currentSnapshot)
     }
 
     private fun configurarAbasPrincipais() {
@@ -1014,41 +1049,12 @@ class MainActivity : AppCompatActivity() {
             AbaPrincipal.SERVIDORES_PUBLICOS
         }
 
-        b.grupoModo.check(idBotaoDaAba(abaSelecionada))
         estilizarAbasSelecionadas()
         atualizarVisibilidadeAbas(ativo)
 
-        b.grupoModo.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (!isChecked) return@addOnButtonCheckedListener
-            if (verificandoSala) {
-                b.grupoModo.check(idBotaoDaAba(abaSelecionada))
-                estilizarAbasSelecionadas()
-                return@addOnButtonCheckedListener
-            }
-            if (isSessaoAtiva()) {
-                val idTravado = idBotaoDaAba(abaSelecionada)
-                if (checkedId != idTravado) {
-                    b.grupoModo.check(idTravado)
-                    estilizarAbasSelecionadas()
-                    toast("Encerre a conexão atual antes de trocar de aba.")
-                }
-                return@addOnButtonCheckedListener
-            }
-
-            val novaAba = abaPeloIdBotao(checkedId)
-            val agora = SystemClock.elapsedRealtime()
-            if (novaAba != abaSelecionada && agora - ultimoToqueAbaMs < 300L) {
-                b.grupoModo.check(idBotaoDaAba(abaSelecionada))
-                estilizarAbasSelecionadas()
-                return@addOnButtonCheckedListener
-            }
-            ultimoToqueAbaMs = agora
-            abaSelecionada = novaAba
-            estilizarAbasSelecionadas()
-            limparErroVerificacaoLocal()
-            atualizarVisibilidadeAbas(ativo = false)
-            renderizarEstado(GdroidLanVpnService.currentSnapshot)
-        }
+        b.btnModoPublicos.setOnClickListener { tentarSelecionarAba(AbaPrincipal.SERVIDORES_PUBLICOS) }
+        b.btnModoEntrar.setOnClickListener { tentarSelecionarAba(AbaPrincipal.ENTRAR_SALA) }
+        b.btnModoCriar.setOnClickListener { tentarSelecionarAba(AbaPrincipal.CRIAR_SERVIDOR) }
     }
 
     private fun atualizarVisibilidadeAbas(ativo: Boolean) {
@@ -1385,12 +1391,12 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (sala.isFull) {
-                item.viewDotSala.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FFCA28"))
+                item.viewDotSala.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#F59E0B"))
                 item.btnEntrarSalaPublica.text = "Lotada"
                 item.btnEntrarSalaPublica.isEnabled = false
                 item.btnEntrarSalaPublica.alpha = 0.5f
             } else {
-                val corDot = if (prefPingLobby && sala.pingMs > 0L) corPorPing(sala.pingMs) else Color.parseColor("#00E676")
+                val corDot = if (prefPingLobby && sala.pingMs > 0L) corPorPing(sala.pingMs) else Color.parseColor("#10B981")
                 item.viewDotSala.backgroundTintList = ColorStateList.valueOf(corDot)
                 item.btnEntrarSalaPublica.text = "Entrar"
                 item.btnEntrarSalaPublica.isEnabled = !bloqueadoPorCooldownOuBusca
@@ -1500,37 +1506,36 @@ class MainActivity : AppCompatActivity() {
             when {
                 verificandoSala -> {
                     b.btnAcaoPrincipal.isEnabled = false
-                    b.btnAcaoPrincipal.alpha = 0.7f
-                    b.btnAcaoPrincipal.text = "VERIFICANDO SALA..."
-                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00A8E8"))
+                    b.btnAcaoPrincipal.alpha = 0.75f
+                    b.btnAcaoPrincipal.text = "Verificando sala..."
+                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2589F5"))
                     b.btnAcaoPrincipal.setTextColor(Color.WHITE)
                 }
                 restPrincipal > 0 -> {
                     b.btnAcaoPrincipal.isEnabled = false
-                    b.btnAcaoPrincipal.alpha = 0.6f
+                    b.btnAcaoPrincipal.alpha = 0.65f
                     b.btnAcaoPrincipal.text = if (ativo) {
-                        if (snap.isHost) "SERVIDOR ATIVO (${restPrincipal}s)" else "CONECTADO (${restPrincipal}s)"
+                        if (snap.isHost) "Servidor ativo (${restPrincipal}s)" else "Conectado (${restPrincipal}s)"
                     } else {
-                        "AGUARDE ${restPrincipal}s..."
+                        "Aguarde ${restPrincipal}s..."
                     }
-                    val cor = if (ativo) "#FF5252" else if (abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR) "#1890FF" else "#00A8E8"
+                    val cor = if (ativo) "#EF4444" else "#2589F5"
                     b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
                     b.btnAcaoPrincipal.setTextColor(Color.WHITE)
                 }
                 ativo -> {
                     b.btnAcaoPrincipal.isEnabled = true
                     b.btnAcaoPrincipal.alpha = 1.0f
-                    b.btnAcaoPrincipal.text = if (snap.isHost) "ENCERRAR SERVIDOR" else "SAIR DA SALA"
-                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF5252"))
+                    b.btnAcaoPrincipal.text = if (snap.isHost) "Encerrar Servidor" else "Sair da Sala"
+                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#EF4444"))
                     b.btnAcaoPrincipal.setTextColor(Color.WHITE)
                 }
                 else -> {
                     b.btnAcaoPrincipal.isEnabled = true
                     b.btnAcaoPrincipal.alpha = 1.0f
                     val ehCriar = (abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR)
-                    b.btnAcaoPrincipal.text = if (ehCriar) "INICIAR SERVIDOR" else "CONECTAR NA SALA"
-                    val cor = if (ehCriar) "#1890FF" else "#00A8E8"
-                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
+                    b.btnAcaoPrincipal.text = if (ehCriar) "Iniciar Servidor" else "Conectar na Sala"
+                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2589F5"))
                     b.btnAcaoPrincipal.setTextColor(Color.WHITE)
                 }
             }
@@ -1579,11 +1584,9 @@ class MainActivity : AppCompatActivity() {
         if (ativo) {
             if (snap.isHost && abaSelecionada != AbaPrincipal.CRIAR_SERVIDOR) {
                 abaSelecionada = AbaPrincipal.CRIAR_SERVIDOR
-                b.grupoModo.check(R.id.btnModoCriar)
                 estilizarAbasSelecionadas()
             } else if (!snap.isHost && abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR) {
                 abaSelecionada = AbaPrincipal.SERVIDORES_PUBLICOS
-                b.grupoModo.check(R.id.btnModoPublicos)
                 estilizarAbasSelecionadas()
             }
         }
@@ -1596,43 +1599,43 @@ class MainActivity : AppCompatActivity() {
 
         if (!ativo && erroLocal != null && badgeLocal != null) {
             b.txtBadgeStatus.text = badgeLocal
-            b.txtBadgeStatus.setTextColor(Color.parseColor("#FF5252"))
-            b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#26FF5252"))
+            b.txtBadgeStatus.setTextColor(Color.parseColor("#EF4444"))
+            b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#24EF4444"))
 
             b.txtDetalheStatus.text = erroLocal
-            b.txtDetalheStatus.setTextColor(Color.parseColor("#FF5252"))
+            b.txtDetalheStatus.setTextColor(Color.parseColor("#EF4444"))
             b.txtDetalheStatus.visibility = View.VISIBLE
         } else {
             when (snap.phase) {
                 GdroidLanVpnService.StatusPhase.OFFLINE -> {
                     b.txtBadgeStatus.text = "OFFLINE"
                     b.txtBadgeStatus.setTextColor(Color.parseColor("#94A3B8"))
-                    b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#2694A3B8"))
+                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2494A3B8"))
                 }
                 GdroidLanVpnService.StatusPhase.CONNECTING -> {
                     b.txtBadgeStatus.text = "CONECTANDO"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#FFCA28"))
-                    b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#26FFCA28"))
+                    b.txtBadgeStatus.setTextColor(Color.parseColor("#F59E0B"))
+                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#24F59E0B"))
                 }
                 GdroidLanVpnService.StatusPhase.WAITING_FRIEND -> {
                     b.txtBadgeStatus.text = if (snap.isPublicRoom) "PÚBLICA" else "PRIVADA"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#00D4FF"))
-                    b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#2600D4FF"))
+                    b.txtBadgeStatus.setTextColor(Color.parseColor("#38BDF8"))
+                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2438BDF8"))
                 }
                 GdroidLanVpnService.StatusPhase.ONLINE -> {
                     b.txtBadgeStatus.text = "CONECTADO"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#00E676"))
-                    b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#2600E676"))
+                    b.txtBadgeStatus.setTextColor(Color.parseColor("#10B981"))
+                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2410B981"))
                 }
                 GdroidLanVpnService.StatusPhase.RECONNECTING -> {
                     b.txtBadgeStatus.text = "RECONECTANDO"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#FFCA28"))
-                    b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#26FFCA28"))
+                    b.txtBadgeStatus.setTextColor(Color.parseColor("#F59E0B"))
+                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#24F59E0B"))
                 }
                 GdroidLanVpnService.StatusPhase.ERROR -> {
                     b.txtBadgeStatus.text = "ERRO"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#FF5252"))
-                    b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#26FF5252"))
+                    b.txtBadgeStatus.setTextColor(Color.parseColor("#EF4444"))
+                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#24EF4444"))
                 }
             }
 
@@ -1640,8 +1643,8 @@ class MainActivity : AppCompatActivity() {
                 b.txtDetalheStatus.text = snap.statusText
                 b.txtDetalheStatus.setTextColor(
                     when (snap.phase) {
-                        GdroidLanVpnService.StatusPhase.ERROR -> Color.parseColor("#FF5252")
-                        GdroidLanVpnService.StatusPhase.RECONNECTING -> Color.parseColor("#FFCA28")
+                        GdroidLanVpnService.StatusPhase.ERROR -> Color.parseColor("#EF4444")
+                        GdroidLanVpnService.StatusPhase.RECONNECTING -> Color.parseColor("#F59E0B")
                         else -> Color.parseColor("#94A3B8")
                     }
                 )
@@ -1660,13 +1663,13 @@ class MainActivity : AppCompatActivity() {
             b.txtMeuIpVirtual.text = snap.myVirtualIp
             if (snap.phase == GdroidLanVpnService.StatusPhase.RECONNECTING) {
                 b.txtPingRota.text = "Reconectando..."
-                b.txtPingRota.setTextColor(Color.parseColor("#FFCA28"))
+                b.txtPingRota.setTextColor(Color.parseColor("#F59E0B"))
             } else if (snap.pingMs > 0L) {
                 b.txtPingRota.text = "${snap.pingMs} ms (${snap.routeMode})"
                 b.txtPingRota.setTextColor(corPorPing(snap.pingMs))
             } else {
                 b.txtPingRota.text = snap.routeMode
-                b.txtPingRota.setTextColor(Color.parseColor("#00D4FF"))
+                b.txtPingRota.setTextColor(Color.parseColor("#38BDF8"))
             }
             b.txtTrafego.text = calcularTextoTrafego(snap.txBytes + snap.rxBytes)
             b.txtContadorSala.text = "${snap.totalPlayersInRoom} / ${snap.maxTotalPlayers}"
@@ -1711,18 +1714,18 @@ class MainActivity : AppCompatActivity() {
             when {
                 membro.isHost -> {
                     row.txtCargoParticipante.text = if (snap.isHost) "VOCÊ" else "HOST"
-                    row.txtCargoParticipante.setTextColor(Color.parseColor("#00E676"))
-                    row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600E676"))
+                    row.txtCargoParticipante.setTextColor(Color.parseColor("#10B981"))
+                    row.txtCargoParticipante.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2410B981"))
                 }
                 !snap.isHost && membro.nodeId == snap.myNodeId -> {
                     row.txtCargoParticipante.text = "VOCÊ"
-                    row.txtCargoParticipante.setTextColor(Color.parseColor("#00D4FF"))
-                    row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600D4FF"))
+                    row.txtCargoParticipante.setTextColor(Color.parseColor("#38BDF8"))
+                    row.txtCargoParticipante.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2438BDF8"))
                 }
                 else -> {
                     row.txtCargoParticipante.text = "JOGADOR"
-                    row.txtCargoParticipante.setTextColor(Color.parseColor("#00D4FF"))
-                    row.txtCargoParticipante.setBackgroundColor(Color.parseColor("#2600D4FF"))
+                    row.txtCargoParticipante.setTextColor(Color.parseColor("#94A3B8"))
+                    row.txtCargoParticipante.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2494A3B8"))
                 }
             }
 
@@ -1732,13 +1735,13 @@ class MainActivity : AppCompatActivity() {
             when {
                 membro.isHost && snap.isHost -> {
                     row.txtPingParticipante.text = "0 ms"
-                    row.txtPingParticipante.setTextColor(Color.parseColor("#00E676"))
-                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00E676"))
+                    row.txtPingParticipante.setTextColor(Color.parseColor("#10B981"))
+                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#10B981"))
                 }
                 membro.routeLabel == "Reconectando" -> {
                     row.txtPingParticipante.text = "..."
-                    row.txtPingParticipante.setTextColor(Color.parseColor("#FFCA28"))
-                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FFCA28"))
+                    row.txtPingParticipante.setTextColor(Color.parseColor("#F59E0B"))
+                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#F59E0B"))
                 }
                 membro.pingMs > 0L -> {
                     val cor = corPorPing(membro.pingMs)
@@ -1749,7 +1752,7 @@ class MainActivity : AppCompatActivity() {
                 else -> {
                     row.txtPingParticipante.text = "-- ms"
                     row.txtPingParticipante.setTextColor(Color.parseColor("#94A3B8"))
-                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00E676"))
+                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#10B981"))
                 }
             }
 

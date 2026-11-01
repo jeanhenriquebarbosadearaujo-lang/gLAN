@@ -13,15 +13,18 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/bg_obsidian"
-        android:fillViewport="true">
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:overScrollMode="never">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:animateLayoutChanges="true"
             android:orientation="vertical"
-            android:paddingHorizontal="18dp"
-            android:paddingTop="14dp"
-            android:paddingBottom="24dp">
+            android:paddingHorizontal="20dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="28dp">
 
             <!-- CABEÇALHO SUPERIOR -->
             <LinearLayout
@@ -30,11 +33,22 @@
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <ImageView
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="46dp"
                     android:layout_height="46dp"
-                    android:contentDescription="@string/app_name"
-                    android:src="@drawable/img_hero_logo" />
+                    app:cardBackgroundColor="@color/surface_card"
+                    app:cardCornerRadius="13dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/stroke_elevated"
+                    app:strokeWidth="1dp">
+
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:contentDescription="@string/app_name"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/img_hero_logo" />
+                </com.google.android.material.card.MaterialCardView>
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -53,9 +67,11 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:letterSpacing="-0.02"
                             android:text="gLAN"
                             android:textColor="@color/text_primary"
-                            android:textSize="20sp"
+                            android:textSize="21sp"
                             android:textStyle="bold" />
 
                         <TextView
@@ -63,21 +79,21 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
-                            android:background="@color/surface_elevated"
+                            android:background="@drawable/bg_chip_metric"
                             android:fontFamily="monospace"
-                            android:paddingHorizontal="6dp"
+                            android:paddingHorizontal="7dp"
                             android:paddingVertical="2dp"
-                            android:text="v3.2"
+                            android:text="v3.4"
                             android:textColor="@color/neon_cyan"
                             android:textSize="10sp"
                             android:textStyle="bold" />
                     </LinearLayout>
 
-                    <!-- CONTA + STATUS REPOSICIONADO -->
+                    <!-- CONTA + CÁPSULA DE STATUS -->
                     <LinearLayout
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
+                        android:layout_marginTop="4dp"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
@@ -86,28 +102,29 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:ellipsize="end"
-                            android:maxWidth="150dp"
+                            android:maxWidth="152dp"
                             android:singleLine="true"
                             android:text="Conta: Jogador"
                             android:textColor="@color/text_secondary"
-                            android:textSize="12sp" />
+                            android:textSize="12.5sp" />
 
                         <TextView
                             android:id="@+id/txtBadgeStatus"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
-                            android:background="#2694A3B8"
-                            android:paddingHorizontal="8dp"
-                            android:paddingVertical="2dp"
+                            android:background="@drawable/bg_pill_capsule"
+                            android:letterSpacing="0.04"
+                            android:paddingHorizontal="9dp"
+                            android:paddingVertical="2.5dp"
                             android:text="OFFLINE"
                             android:textColor="@color/text_secondary"
-                            android:textSize="10sp"
+                            android:textSize="9.5sp"
                             android:textStyle="bold" />
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- BOTÃO DOS TRÊS TRACINHOS NO CANTO SUPERIOR DIREITO -->
+                <!-- BOTÃO MENU GAVETA (CANTO SUPERIOR DIREITO) -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnMenuLateral"
                     style="?attr/materialButtonOutlinedStyle"
@@ -118,121 +135,138 @@
                     android:insetBottom="0dp"
                     android:minWidth="0dp"
                     android:padding="0dp"
-                    app:cornerRadius="12dp"
+                    app:backgroundTint="@color/surface_card"
+                    app:cornerRadius="13dp"
                     app:icon="@drawable/ic_menu_bars"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
-                    app:iconSize="22dp"
+                    app:iconSize="21dp"
                     app:iconTint="@color/text_primary"
                     app:strokeColor="@color/stroke_subtle" />
             </LinearLayout>
 
-            <!-- AVISO AUTOMÁTICO DE NOVA VERSÃO (EXIBIDO SOMENTE QUANDO HÁ ATUALIZAÇÃO OFICIAL) -->
+            <!-- AVISO AUTOMÁTICO DE NOVA VERSÃO -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardAvisoAtualizacao"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="14dp"
                 android:visibility="gone"
-                app:cardBackgroundColor="@color/surface_elevated"
-                app:cardCornerRadius="14dp"
+                app:cardBackgroundColor="#1AF59E0B"
+                app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/warning_amber"
+                app:strokeColor="#59F59E0B"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="12dp">
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="13dp">
 
                     <TextView
                         android:id="@+id/txtTituloAvisoAtualizacao"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:letterSpacing="0.06"
                         android:text="ATUALIZAÇÃO DISPONÍVEL"
                         android:textColor="@color/warning_amber"
-                        android:textSize="11sp"
+                        android:textSize="10.5sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/txtCorpoAvisoAtualizacao"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="2dp"
                         android:text="Uma nova versão oficial do gLAN está disponível. Atualize para manter compatibilidade total nas salas."
                         android:textColor="@color/text_primary"
                         android:textSize="12sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- TRÊS OPÇÕES PRINCIPAIS: SERVIDORES PÚBLICOS | ENTRAR NA SALA | CRIAR SERVIDOR -->
-            <com.google.android.material.button.MaterialButtonToggleGroup
+            <!-- CONTROLE SEGMENTADO MODERNO: SERVIDORES PÚBLICOS | ENTRAR NA SALA | CRIAR SERVIDOR -->
+            <LinearLayout
                 android:id="@+id/grupoModo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                app:selectionRequired="true"
-                app:singleSelection="true">
+                android:layout_marginTop="18dp"
+                android:background="@drawable/bg_segmented_track"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="4dp">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnModoPublicos"
-                    style="?attr/materialButtonOutlinedStyle"
+                    style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="44dp"
+                    android:layout_marginEnd="2dp"
                     android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
                     android:gravity="center"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
+                    android:letterSpacing="0"
                     android:lineSpacingMultiplier="0.95"
                     android:maxLines="2"
                     android:minWidth="0dp"
                     android:paddingHorizontal="6dp"
                     android:text="Servidores Públicos"
+                    android:textAllCaps="false"
                     android:textColor="@color/text_primary"
-                    android:textSize="11sp"
-                    android:textStyle="bold"
-                    app:strokeColor="@color/stroke_subtle" />
+                    android:textSize="11.5sp"
+                    app:cornerRadius="10dp"
+                    app:strokeWidth="0dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnModoEntrar"
-                    style="?attr/materialButtonOutlinedStyle"
+                    style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="44dp"
+                    android:layout_marginHorizontal="2dp"
                     android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
                     android:gravity="center"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
+                    android:letterSpacing="0"
                     android:lineSpacingMultiplier="0.95"
                     android:maxLines="2"
                     android:minWidth="0dp"
                     android:paddingHorizontal="6dp"
                     android:text="Entrar na Sala"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp"
-                    android:textStyle="bold"
-                    app:strokeColor="@color/stroke_subtle" />
+                    android:textAllCaps="false"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11.5sp"
+                    app:cornerRadius="10dp"
+                    app:strokeWidth="0dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnModoCriar"
-                    style="?attr/materialButtonOutlinedStyle"
+                    style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="2dp"
                     android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
                     android:gravity="center"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
+                    android:letterSpacing="0"
                     android:lineSpacingMultiplier="0.95"
                     android:maxLines="2"
                     android:minWidth="0dp"
                     android:paddingHorizontal="6dp"
                     android:text="Criar Servidor"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp"
-                    android:textStyle="bold"
-                    app:strokeColor="@color/stroke_subtle" />
-            </com.google.android.material.button.MaterialButtonToggleGroup>
+                    android:textAllCaps="false"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11.5sp"
+                    app:cornerRadius="10dp"
+                    app:strokeWidth="0dp" />
+            </LinearLayout>
 
             <!-- =========================================================== -->
             <!-- ABA 1 (INÍCIO): SERVIDORES PÚBLICOS + PESQUISA              -->
@@ -241,9 +275,9 @@
                 android:id="@+id/cardServidoresPublicos"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="16dp"
                 app:cardBackgroundColor="@color/surface_card"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/stroke_subtle"
                 app:strokeWidth="1dp">
@@ -252,7 +286,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:padding="18dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -264,9 +298,10 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:letterSpacing="0.08"
                             android:text="SERVIDORES PÚBLICOS"
                             android:textColor="@color/neon_cyan"
-                            android:textSize="11sp"
+                            android:textSize="10.5sp"
                             android:textStyle="bold" />
 
                         <TextView
@@ -274,11 +309,12 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="6dp"
-                            android:background="@color/surface_elevated"
-                            android:paddingHorizontal="8dp"
-                            android:paddingVertical="3dp"
+                            android:background="@drawable/bg_pill_capsule"
+                            android:backgroundTint="#1F38BDF8"
+                            android:paddingHorizontal="10dp"
+                            android:paddingVertical="3.5dp"
                             android:text="Ao vivo"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="@color/neon_cyan"
                             android:textSize="10sp"
                             android:textStyle="bold" />
 
@@ -286,27 +322,36 @@
                             android:id="@+id/btnAtualizarLobby"
                             style="@style/Widget.Material3.Button.TextButton"
                             android:layout_width="wrap_content"
-                            android:layout_height="28dp"
+                            android:layout_height="32dp"
+                            android:fontFamily="sans-serif-medium"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:letterSpacing="0"
                             android:minWidth="0dp"
-                            android:paddingHorizontal="6dp"
+                            android:paddingHorizontal="8dp"
                             android:text="Atualizar"
-                            android:textColor="@color/neon_cyan"
-                            android:textSize="11sp" />
+                            android:textAllCaps="false"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11.5sp"
+                            app:cornerRadius="8dp"
+                            app:icon="@drawable/ic_refresh"
+                            app:iconPadding="4dp"
+                            app:iconSize="14dp"
+                            app:iconTint="@color/neon_cyan" />
                     </LinearLayout>
 
                     <!-- BARRA DE PESQUISA POR NOME DA SALA OU HOST -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/layoutPesquisaServidor"
+                        style="@style/Widget.GDroidLAN.TextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:hint="Pesquisar por nome da sala ou host"
+                        android:layout_marginTop="12dp"
+                        android:hint="Pesquisar por sala ou anfitrião"
                         app:endIconMode="clear_text"
                         app:endIconTint="@color/text_secondary"
                         app:startIconDrawable="@drawable/ic_search"
-                        app:startIconTint="@color/text_secondary">
+                        app:startIconTint="@color/text_tertiary">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/edtPesquisaServidor"
@@ -324,10 +369,15 @@
                         android:id="@+id/txtSemSalasPublicas"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
+                        android:layout_marginTop="14dp"
+                        android:background="@drawable/bg_metric_tile"
+                        android:gravity="center"
+                        android:lineSpacingExtra="2dp"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="22dp"
                         android:text="Nenhum servidor público aberto no momento."
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textSize="12.5sp" />
 
                     <LinearLayout
                         android:id="@+id/containerSalasPublicas"
@@ -346,10 +396,10 @@
                 android:id="@+id/cardEntrarCodigo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="16dp"
                 android:visibility="gone"
                 app:cardBackgroundColor="@color/surface_card"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/stroke_subtle"
                 app:strokeWidth="1dp">
@@ -358,37 +408,40 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:padding="18dp">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="ENTRAR NA SALA COM CÓDIGO"
+                        android:letterSpacing="0.08"
+                        android:text="CONECTAR POR CÓDIGO"
                         android:textColor="@color/neon_cyan"
-                        android:textSize="11sp"
+                        android:textSize="10.5sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="Informe o código recebido do anfitrião para conectar em uma sala privada ou pública."
+                        android:layout_marginTop="6dp"
+                        android:lineSpacingExtra="2dp"
+                        android:text="Digite ou cole o código de 6 caracteres enviado pelo anfitrião para entrar na sala."
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textSize="12.5sp" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
+                        android:layout_marginTop="14dp"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
 
                         <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.GDroidLAN.TextInputLayout"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginEnd="8dp"
+                            android:layout_marginEnd="10dp"
                             android:layout_weight="1"
-                            android:hint="Ex.: K7P9M2">
+                            android:hint="Código (ex.: K7P9M2)">
 
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/edtCodigoAmigo"
@@ -396,6 +449,7 @@
                                 android:layout_height="wrap_content"
                                 android:fontFamily="monospace"
                                 android:inputType="textCapCharacters|textNoSuggestions"
+                                android:letterSpacing="0.14"
                                 android:maxLength="10"
                                 android:singleLine="true"
                                 android:textColor="@color/text_primary"
@@ -407,10 +461,22 @@
                             android:id="@+id/btnColarCodigoAmigo"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="wrap_content"
-                            android:layout_height="52dp"
+                            android:layout_height="54dp"
+                            android:fontFamily="sans-serif-medium"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="16dp"
                             android:text="Colar"
+                            android:textAllCaps="false"
                             android:textColor="@color/neon_cyan"
-                            app:strokeColor="@color/stroke_subtle" />
+                            android:textSize="13sp"
+                            app:backgroundTint="@color/surface_elevated"
+                            app:cornerRadius="12dp"
+                            app:icon="@drawable/ic_copy"
+                            app:iconPadding="6dp"
+                            app:iconSize="16dp"
+                            app:iconTint="@color/neon_cyan"
+                            app:strokeColor="@color/stroke_elevated" />
                     </LinearLayout>
 
                 </LinearLayout>
@@ -423,10 +489,10 @@
                 android:id="@+id/cardHost"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="16dp"
                 android:visibility="gone"
                 app:cardBackgroundColor="@color/surface_card"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/stroke_subtle"
                 app:strokeWidth="1dp">
@@ -435,67 +501,81 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:padding="18dp">
 
                     <TextView
                         android:id="@+id/txtLabelVisibilidade"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:letterSpacing="0.08"
                         android:text="VISIBILIDADE DA SALA"
                         android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
+                        android:textSize="10.5sp"
                         android:textStyle="bold" />
 
-                    <com.google.android.material.button.MaterialButtonToggleGroup
+                    <LinearLayout
                         android:id="@+id/grupoVisibilidade"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        app:selectionRequired="true"
-                        app:singleSelection="true">
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_segmented_track"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:padding="4dp">
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnSalaPrivada"
-                            style="?attr/materialButtonOutlinedStyle"
+                            style="@style/Widget.Material3.Button.TextButton"
                             android:layout_width="0dp"
                             android:layout_height="40dp"
+                            android:layout_marginEnd="2dp"
                             android:layout_weight="1"
+                            android:fontFamily="sans-serif-medium"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:letterSpacing="0"
                             android:text="Privada"
+                            android:textAllCaps="false"
                             android:textColor="@color/text_primary"
-                            android:textSize="12sp"
+                            android:textSize="12.5sp"
+                            app:cornerRadius="10dp"
                             app:icon="@drawable/ic_lock"
                             app:iconGravity="textStart"
                             app:iconPadding="6dp"
                             app:iconSize="15dp"
                             app:iconTint="@color/text_secondary"
-                            app:strokeColor="@color/stroke_subtle" />
+                            app:strokeWidth="0dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnSalaPublica"
-                            style="?attr/materialButtonOutlinedStyle"
+                            style="@style/Widget.Material3.Button.TextButton"
                             android:layout_width="0dp"
                             android:layout_height="40dp"
+                            android:layout_marginStart="2dp"
                             android:layout_weight="1"
+                            android:fontFamily="sans-serif-medium"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:letterSpacing="0"
                             android:text="Pública"
-                            android:textColor="@color/text_primary"
-                            android:textSize="12sp"
+                            android:textAllCaps="false"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12.5sp"
+                            app:cornerRadius="10dp"
                             app:icon="@drawable/ic_globe"
                             app:iconGravity="textStart"
                             app:iconPadding="6dp"
                             app:iconSize="15dp"
                             app:iconTint="@color/neon_cyan"
-                            app:strokeColor="@color/stroke_subtle" />
-                    </com.google.android.material.button.MaterialButtonToggleGroup>
+                            app:strokeWidth="0dp" />
+                    </LinearLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/layoutNomeSalaPublica"
+                        style="@style/Widget.GDroidLAN.TextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
+                        android:layout_marginTop="12dp"
                         android:hint="Nome da Sala Pública (opcional)"
                         android:visibility="gone">
 
@@ -514,18 +594,21 @@
                         android:id="@+id/txtInfoProtecaoIpPublica"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_metric_tile"
+                        android:lineSpacingExtra="2dp"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="9dp"
                         android:text="Proteção de IP ativa: somente Ponte TLS (seu IP real fica oculto)."
-                        android:textColor="@color/neon_emerald"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
+                        android:textColor="@color/status_online"
+                        android:textSize="11.5sp"
                         android:visibility="gone" />
 
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginVertical="14dp"
-                        android:background="@color/stroke_subtle" />
+                        android:layout_marginVertical="16dp"
+                        android:background="@color/divider_hairline" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -537,9 +620,10 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:letterSpacing="0.08"
                             android:text="CÓDIGO DA SALA"
                             android:textColor="@color/text_secondary"
-                            android:textSize="11sp"
+                            android:textSize="10.5sp"
                             android:textStyle="bold" />
 
                         <com.google.android.material.button.MaterialButton
@@ -547,69 +631,97 @@
                             style="@style/Widget.Material3.Button.TextButton"
                             android:layout_width="wrap_content"
                             android:layout_height="30dp"
+                            android:fontFamily="sans-serif-medium"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:letterSpacing="0"
                             android:minWidth="0dp"
-                            android:paddingHorizontal="6dp"
+                            android:paddingHorizontal="8dp"
                             android:text="Gerar outro"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
+                            android:textAllCaps="false"
+                            android:textColor="@color/neon_cyan"
+                            android:textSize="11.5sp"
+                            app:cornerRadius="8dp"
+                            app:icon="@drawable/ic_refresh"
+                            app:iconPadding="4dp"
+                            app:iconSize="13dp"
+                            app:iconTint="@color/neon_cyan" />
                     </LinearLayout>
 
                     <TextView
                         android:id="@+id/txtCodigoHost"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:background="@color/surface_elevated"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_code_vault"
                         android:fontFamily="monospace"
                         android:gravity="center"
-                        android:letterSpacing="0.22"
-                        android:paddingVertical="12dp"
+                        android:letterSpacing="0.24"
+                        android:paddingVertical="14dp"
                         android:text="K7P9M2"
                         android:textColor="@color/text_primary"
-                        android:textSize="26sp"
+                        android:textSize="27sp"
                         android:textStyle="bold" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="10dp"
                         android:orientation="horizontal">
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnCopiarCodigoHost"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="40dp"
+                            android:layout_height="42dp"
                             android:layout_marginEnd="8dp"
                             android:layout_weight="1"
+                            android:fontFamily="sans-serif-medium"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:letterSpacing="0"
                             android:text="Copiar Código"
+                            android:textAllCaps="false"
                             android:textColor="@color/text_primary"
-                            android:textSize="12sp"
-                            app:strokeColor="@color/stroke_subtle" />
+                            android:textSize="12.5sp"
+                            app:backgroundTint="@color/surface_elevated"
+                            app:cornerRadius="11dp"
+                            app:icon="@drawable/ic_copy"
+                            app:iconGravity="textStart"
+                            app:iconPadding="6dp"
+                            app:iconSize="15dp"
+                            app:iconTint="@color/text_secondary"
+                            app:strokeColor="@color/stroke_elevated" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnCompartilharCodigo"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="0dp"
-                            android:layout_height="40dp"
+                            android:layout_height="42dp"
                             android:layout_weight="1"
+                            android:fontFamily="sans-serif-medium"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:letterSpacing="0"
                             android:text="Compartilhar"
+                            android:textAllCaps="false"
                             android:textColor="@color/neon_cyan"
-                            android:textSize="12sp"
-                            app:strokeColor="@color/stroke_subtle" />
+                            android:textSize="12.5sp"
+                            app:backgroundTint="#1438BDF8"
+                            app:cornerRadius="11dp"
+                            app:icon="@drawable/ic_share"
+                            app:iconGravity="textStart"
+                            app:iconPadding="6dp"
+                            app:iconSize="15dp"
+                            app:iconTint="@color/neon_cyan"
+                            app:strokeColor="#3338BDF8" />
                     </LinearLayout>
 
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginVertical="14dp"
-                        android:background="@color/stroke_subtle" />
+                        android:layout_marginVertical="16dp"
+                        android:background="@color/divider_hairline" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -620,16 +732,17 @@
                         <LinearLayout
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
+                            android:layout_marginEnd="10dp"
                             android:layout_weight="1"
                             android:orientation="vertical">
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
                                 android:text="Limite de Jogadores"
                                 android:textColor="@color/text_primary"
-                                android:textSize="14sp"
-                                android:textStyle="bold" />
+                                android:textSize="14.5sp" />
 
                             <TextView
                                 android:id="@+id/txtSubtituloLimite"
@@ -638,62 +751,76 @@
                                 android:layout_marginTop="2dp"
                                 android:text="Você + 7 convidados (máx. 8)"
                                 android:textColor="@color/text_secondary"
-                                android:textSize="11sp" />
+                                android:textSize="11.5sp" />
                         </LinearLayout>
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnMenosVagas"
-                            style="?attr/materialButtonOutlinedStyle"
-                            android:layout_width="40dp"
-                            android:layout_height="40dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:minWidth="0dp"
-                            android:padding="0dp"
-                            android:text="-"
-                            android:textColor="@color/text_primary"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            app:strokeColor="@color/stroke_subtle" />
-
-                        <TextView
-                            android:id="@+id/txtNumeroJogadores"
-                            android:layout_width="44dp"
+                        <LinearLayout
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:fontFamily="monospace"
-                            android:gravity="center"
-                            android:text="8"
-                            android:textColor="@color/neon_emerald"
-                            android:textSize="20sp"
-                            android:textStyle="bold" />
+                            android:background="@drawable/bg_segmented_track"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:padding="4dp">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnMaisVagas"
-                            style="?attr/materialButtonOutlinedStyle"
-                            android:layout_width="40dp"
-                            android:layout_height="40dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:minWidth="0dp"
-                            android:padding="0dp"
-                            android:text="+"
-                            android:textColor="@color/text_primary"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            app:strokeColor="@color/stroke_subtle" />
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnMenosVagas"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="38dp"
+                                android:layout_height="38dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minWidth="0dp"
+                                android:padding="0dp"
+                                android:text="-"
+                                android:textColor="@color/text_primary"
+                                android:textSize="19sp"
+                                android:textStyle="bold"
+                                app:backgroundTint="@color/surface_elevated"
+                                app:cornerRadius="9dp" />
+
+                            <TextView
+                                android:id="@+id/txtNumeroJogadores"
+                                android:layout_width="42dp"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:gravity="center"
+                                android:text="8"
+                                android:textColor="@color/neon_cyan"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnMaisVagas"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="38dp"
+                                android:layout_height="38dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minWidth="0dp"
+                                android:padding="0dp"
+                                android:text="+"
+                                android:textColor="@color/text_primary"
+                                android:textSize="19sp"
+                                android:textStyle="bold"
+                                app:backgroundTint="@color/surface_elevated"
+                                app:cornerRadius="9dp" />
+                        </LinearLayout>
                     </LinearLayout>
 
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginVertical="14dp"
-                        android:background="@color/stroke_subtle" />
+                        android:layout_marginVertical="16dp"
+                        android:background="@color/divider_hairline" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:background="@drawable/bg_code_vault"
                         android:gravity="center_vertical"
-                        android:orientation="horizontal">
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="14dp"
+                        android:paddingVertical="12dp">
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -711,11 +838,11 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="1dp"
+                                android:layout_marginTop="2dp"
                                 android:fontFamily="monospace"
                                 android:text="10.10.0.1"
                                 android:textColor="@color/neon_cyan"
-                                android:textSize="16sp"
+                                android:textSize="17sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -723,15 +850,24 @@
                             android:id="@+id/btnCopiarIpHost"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="38dp"
+                            android:fontFamily="sans-serif-medium"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:letterSpacing="0"
                             android:minWidth="0dp"
                             android:paddingHorizontal="12dp"
                             android:text="Copiar IP"
+                            android:textAllCaps="false"
                             android:textColor="@color/neon_cyan"
                             android:textSize="12sp"
-                            app:strokeColor="@color/stroke_subtle" />
+                            app:backgroundTint="#1438BDF8"
+                            app:cornerRadius="10dp"
+                            app:icon="@drawable/ic_copy"
+                            app:iconPadding="5dp"
+                            app:iconSize="14dp"
+                            app:iconTint="@color/neon_cyan"
+                            app:strokeColor="#3338BDF8" />
                     </LinearLayout>
 
                 </LinearLayout>
@@ -742,12 +878,12 @@
                 android:id="@+id/cardIpClienteConectado"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="16dp"
                 android:visibility="gone"
                 app:cardBackgroundColor="@color/surface_card"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/neon_cyan"
+                app:strokeColor="#4D38BDF8"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -755,7 +891,7 @@
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:padding="16dp">
+                    android:padding="18dp">
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -766,19 +902,20 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:letterSpacing="0.08"
                             android:text="IP PARA ENTRAR NO GDROID"
                             android:textColor="@color/neon_cyan"
-                            android:textSize="11sp"
+                            android:textSize="10.5sp"
                             android:textStyle="bold" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginTop="4dp"
                             android:fontFamily="monospace"
                             android:text="10.10.0.1"
                             android:textColor="@color/text_primary"
-                            android:textSize="22sp"
+                            android:textSize="23sp"
                             android:textStyle="bold" />
                     </LinearLayout>
 
@@ -786,24 +923,33 @@
                         android:id="@+id/btnCopiarIpParaJogo"
                         android:layout_width="wrap_content"
                         android:layout_height="44dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:letterSpacing="0"
+                        android:paddingHorizontal="16dp"
                         android:text="Copiar IP"
+                        android:textAllCaps="false"
                         android:textColor="#FFFFFF"
                         android:textSize="13sp"
-                        android:textStyle="bold"
                         app:backgroundTint="@color/neon_emerald"
-                        app:cornerRadius="12dp" />
+                        app:cornerRadius="12dp"
+                        app:icon="@drawable/ic_copy"
+                        app:iconPadding="6dp"
+                        app:iconSize="15dp"
+                        app:iconTint="#FFFFFF" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- BOTÃO PRINCIPAL -->
+            <!-- BOTÃO PRINCIPAL DE AÇÃO -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAcaoPrincipal"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
-                android:layout_marginTop="14dp"
-                android:text="INICIAR SERVIDOR"
-                android:textSize="14sp"
-                android:textStyle="bold"
+                android:layout_marginTop="16dp"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.03"
+                android:text="Iniciar Servidor"
+                android:textAllCaps="false"
+                android:textSize="15sp"
                 android:visibility="gone"
                 app:cornerRadius="14dp" />
 
@@ -812,13 +958,14 @@
                 android:id="@+id/txtDetalheStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
                 android:gravity="center"
+                android:lineSpacingExtra="2dp"
                 android:textColor="@color/text_secondary"
-                android:textSize="12sp"
+                android:textSize="12.5sp"
                 android:visibility="gone" />
 
-            <!-- PAINEL DE SESSÃO ATIVA (JOGADORES + REDE) -->
+            <!-- PAINEL DE SESSÃO ATIVA (JOGADORES + TELEMETRIA DE REDE) -->
             <LinearLayout
                 android:id="@+id/painelSessaoAtiva"
                 android:layout_width="match_parent"
@@ -829,9 +976,9 @@
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="14dp"
                     app:cardBackgroundColor="@color/surface_card"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="20dp"
                     app:cardElevation="0dp"
                     app:strokeColor="@color/stroke_subtle"
                     app:strokeWidth="1dp">
@@ -840,7 +987,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="18dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -852,34 +999,38 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
+                                android:letterSpacing="0.08"
                                 android:text="JOGADORES NA SALA"
                                 android:textColor="@color/text_secondary"
-                                android:textSize="11sp"
+                                android:textSize="10.5sp"
                                 android:textStyle="bold" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnDesbloquearRemovidos"
                                 style="@style/Widget.Material3.Button.TextButton"
                                 android:layout_width="wrap_content"
-                                android:layout_height="28dp"
+                                android:layout_height="30dp"
                                 android:layout_marginEnd="6dp"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
+                                android:letterSpacing="0"
                                 android:minWidth="0dp"
-                                android:paddingHorizontal="6dp"
-                                android:text="Desbloquear (0)"
+                                android:paddingHorizontal="8dp"
+                                android:text="Bloqueados (0)"
+                                android:textAllCaps="false"
                                 android:textColor="@color/warning_amber"
-                                android:textSize="11sp"
-                                android:visibility="gone" />
+                                android:textSize="11.5sp"
+                                android:visibility="gone"
+                                app:cornerRadius="8dp" />
 
                             <TextView
                                 android:id="@+id/txtContadorSala"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:background="@color/surface_elevated"
+                                android:background="@drawable/bg_chip_metric"
                                 android:fontFamily="monospace"
-                                android:paddingHorizontal="8dp"
-                                android:paddingVertical="3dp"
+                                android:paddingHorizontal="9dp"
+                                android:paddingVertical="4dp"
                                 android:text="1 / 8"
                                 android:textColor="@color/neon_cyan"
                                 android:textSize="11sp"
@@ -890,8 +1041,11 @@
                             android:id="@+id/txtSemParticipantes"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="Conectando sala..."
+                            android:layout_marginTop="12dp"
+                            android:background="@drawable/bg_metric_tile"
+                            android:gravity="center"
+                            android:paddingVertical="16dp"
+                            android:text="Sincronizando sala..."
                             android:textColor="@color/text_secondary"
                             android:textSize="12sp"
                             android:visibility="gone" />
@@ -909,9 +1063,9 @@
                     android:id="@+id/cardEstatisticasRede"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="14dp"
                     app:cardBackgroundColor="@color/surface_card"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="20dp"
                     app:cardElevation="0dp"
                     app:strokeColor="@color/stroke_subtle"
                     app:strokeWidth="1dp">
@@ -920,83 +1074,106 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="14dp">
+                        android:padding="16dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:baselineAligned="false"
                             android:orientation="horizontal">
 
                             <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:layout_marginEnd="6dp"
                                 android:layout_weight="1"
-                                android:orientation="vertical">
+                                android:background="@drawable/bg_metric_tile"
+                                android:orientation="vertical"
+                                android:padding="10dp">
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="Meu IP"
-                                    android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
+                                    android:letterSpacing="0.04"
+                                    android:text="MEU IP"
+                                    android:textColor="@color/text_tertiary"
+                                    android:textSize="9.5sp"
+                                    android:textStyle="bold" />
 
                                 <TextView
                                     android:id="@+id/txtMeuIpVirtual"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
+                                    android:layout_marginTop="4dp"
+                                    android:ellipsize="end"
                                     android:fontFamily="monospace"
+                                    android:singleLine="true"
                                     android:text="10.10.0.1"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="13sp"
+                                    android:textSize="12.5sp"
                                     android:textStyle="bold" />
                             </LinearLayout>
 
                             <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
+                                android:layout_marginHorizontal="3dp"
+                                android:layout_weight="1.2"
+                                android:background="@drawable/bg_metric_tile"
+                                android:orientation="vertical"
+                                android:padding="10dp">
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="Latência"
-                                    android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
+                                    android:letterSpacing="0.04"
+                                    android:text="ROTA E PING"
+                                    android:textColor="@color/text_tertiary"
+                                    android:textSize="9.5sp"
+                                    android:textStyle="bold" />
 
                                 <TextView
                                     android:id="@+id/txtPingRota"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
+                                    android:layout_marginTop="4dp"
+                                    android:ellipsize="end"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:singleLine="true"
                                     android:text="Pronto"
                                     android:textColor="@color/neon_cyan"
-                                    android:textSize="13sp"
-                                    android:textStyle="bold" />
+                                    android:textSize="12sp" />
                             </LinearLayout>
 
                             <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
                                 android:layout_weight="1"
-                                android:orientation="vertical">
+                                android:background="@drawable/bg_metric_tile"
+                                android:orientation="vertical"
+                                android:padding="10dp">
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="Dados"
-                                    android:textColor="@color/text_secondary"
-                                    android:textSize="11sp" />
+                                    android:letterSpacing="0.04"
+                                    android:text="TRÁFEGO"
+                                    android:textColor="@color/text_tertiary"
+                                    android:textSize="9.5sp"
+                                    android:textStyle="bold" />
 
                                 <TextView
                                     android:id="@+id/txtTrafego"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
+                                    android:layout_marginTop="4dp"
+                                    android:ellipsize="end"
+                                    android:fontFamily="monospace"
+                                    android:singleLine="true"
                                     android:text="0 KB"
                                     android:textColor="@color/text_primary"
-                                    android:textSize="13sp"
+                                    android:textSize="12sp"
                                     android:textStyle="bold" />
                             </LinearLayout>
                         </LinearLayout>
@@ -1005,19 +1182,25 @@
                             android:id="@+id/btnTestarPing"
                             style="?attr/materialButtonOutlinedStyle"
                             android:layout_width="match_parent"
-                            android:layout_height="40dp"
+                            android:layout_height="42dp"
                             android:layout_marginTop="12dp"
                             android:enabled="false"
+                            android:fontFamily="sans-serif-medium"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
+                            android:letterSpacing="0"
                             android:text="Testar Ping da Sala"
+                            android:textAllCaps="false"
                             android:textColor="@color/neon_cyan"
-                            android:textSize="12sp"
+                            android:textSize="12.5sp"
+                            app:backgroundTint="#1238BDF8"
+                            app:cornerRadius="11dp"
                             app:icon="@drawable/ic_ping"
                             app:iconGravity="textStart"
                             app:iconPadding="6dp"
+                            app:iconSize="16dp"
                             app:iconTint="@color/neon_cyan"
-                            app:strokeColor="@color/stroke_subtle" />
+                            app:strokeColor="#3338BDF8" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
@@ -1027,9 +1210,9 @@
                 android:id="@+id/cardComoUsar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="16dp"
                 app:cardBackgroundColor="@color/surface_card"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/stroke_subtle"
                 app:strokeWidth="1dp">
@@ -1038,24 +1221,25 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="18dp">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="COMO FUNCIONA"
-                        android:textColor="@color/text_secondary"
+                        android:letterSpacing="0.08"
+                        android:text="COMO CONECTAR NO JOGO"
+                        android:textColor="@color/text_tertiary"
                         android:textSize="10sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:lineSpacingExtra="3dp"
-                        android:text="1. Entre em um dos Servidores Públicos, use um código em Entrar na Sala ou abra sua sala em Criar Servidor.\n2. Após conectar, copie o IP fixo 10.10.0.1.\n3. Abra o GDroid e conecte na partida usando o IP 10.10.0.1."
+                        android:layout_marginTop="8dp"
+                        android:lineSpacingExtra="4dp"
+                        android:text="1. Entre em um dos Servidores Públicos, use um código em Entrar na Sala ou abra sua sala em Criar Servidor.\n2. Assim que conectar, toque em Copiar IP (10.10.0.1).\n3. Abra o GDroid e entre na partida usando o endereço 10.10.0.1."
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textSize="12.5sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -1063,11 +1247,11 @@
     </ScrollView>
 
     <!-- =================================================================== -->
-    <!-- GAVETA LATERAL (MENU DOS TRÊS TRACINHOS — DIREITA)                  -->
+    <!-- GAVETA LATERAL (MENU — DIREITA)                                     -->
     <!-- =================================================================== -->
     <LinearLayout
         android:id="@+id/painelGavetaMenu"
-        android:layout_width="292dp"
+        android:layout_width="302dp"
         android:layout_height="match_parent"
         android:layout_gravity="end"
         android:background="@color/surface_card"
@@ -1076,19 +1260,32 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <!-- TOPO DA GAVETA -->
+        <!-- CARD RESUMO DE PERFIL NO TOPO DA GAVETA -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
+            android:background="@drawable/bg_item_surface"
             android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:padding="14dp">
 
-            <ImageView
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="44dp"
                 android:layout_height="44dp"
-                android:contentDescription="@string/app_name"
-                android:src="@drawable/img_hero_logo" />
+                app:cardBackgroundColor="@color/surface_low"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/stroke_elevated"
+                app:strokeWidth="1dp">
+
+                <ImageView
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@string/app_name"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/img_hero_logo" />
+            </com.google.android.material.card.MaterialCardView>
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -1106,9 +1303,10 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
                         android:text="gLAN"
                         android:textColor="@color/text_primary"
-                        android:textSize="18sp"
+                        android:textSize="17sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -1116,11 +1314,11 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
-                        android:background="@color/surface_elevated"
+                        android:background="@drawable/bg_chip_metric"
                         android:fontFamily="monospace"
                         android:paddingHorizontal="6dp"
                         android:paddingVertical="2dp"
-                        android:text="v3.2"
+                        android:text="v3.4"
                         android:textColor="@color/neon_cyan"
                         android:textSize="10sp"
                         android:textStyle="bold" />
@@ -1130,7 +1328,7 @@
                     android:id="@+id/txtContaMenu"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:layout_marginTop="3dp"
                     android:ellipsize="end"
                     android:singleLine="true"
                     android:text="Conta: Jogador"
@@ -1139,96 +1337,140 @@
             </LinearLayout>
         </LinearLayout>
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginVertical="18dp"
-            android:background="@color/stroke_subtle" />
-
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
             android:layout_marginBottom="8dp"
-            android:text="MENU"
-            android:textColor="@color/text_secondary"
+            android:layout_marginStart="6dp"
+            android:letterSpacing="0.08"
+            android:text="NAVEGAÇÃO"
+            android:textColor="@color/text_tertiary"
             android:textSize="10sp"
             android:textStyle="bold" />
 
         <!-- OPÇÃO 1: PERFIL -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMenuPerfil"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="match_parent"
             android:layout_height="48dp"
+            android:fontFamily="sans-serif-medium"
             android:gravity="start|center_vertical"
-            android:paddingHorizontal="14dp"
+            android:letterSpacing="0"
+            android:paddingHorizontal="12dp"
             android:text="Perfil"
+            android:textAllCaps="false"
             android:textColor="@color/text_primary"
-            android:textSize="13sp"
-            android:textStyle="bold"
+            android:textSize="14sp"
             app:cornerRadius="12dp"
-            app:strokeColor="@color/stroke_subtle" />
+            app:icon="@drawable/ic_person"
+            app:iconGravity="textStart"
+            app:iconPadding="14dp"
+            app:iconSize="19dp"
+            app:iconTint="@color/neon_cyan" />
 
         <!-- OPÇÃO 2: CONFIGURAÇÕES -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMenuConfiguracoes"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="4dp"
+            android:fontFamily="sans-serif-medium"
             android:gravity="start|center_vertical"
-            android:paddingHorizontal="14dp"
+            android:letterSpacing="0"
+            android:paddingHorizontal="12dp"
             android:text="Configurações"
+            android:textAllCaps="false"
             android:textColor="@color/text_primary"
-            android:textSize="13sp"
+            android:textSize="14sp"
             app:cornerRadius="12dp"
-            app:strokeColor="@color/stroke_subtle" />
+            app:icon="@drawable/ic_settings"
+            app:iconGravity="textStart"
+            app:iconPadding="14dp"
+            app:iconSize="19dp"
+            app:iconTint="@color/text_secondary" />
 
-        <!-- OPÇÃO 2: POLÍTICA DE PRIVACIDADE -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="10dp"
+            android:background="@color/divider_hairline" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:layout_marginStart="6dp"
+            android:letterSpacing="0.08"
+            android:text="INFORMAÇÕES"
+            android:textColor="@color/text_tertiary"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <!-- OPÇÃO 3: POLÍTICA DE PRIVACIDADE -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMenuPrivacidade"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
+            android:layout_height="46dp"
             android:gravity="start|center_vertical"
-            android:paddingHorizontal="14dp"
+            android:letterSpacing="0"
+            android:paddingHorizontal="12dp"
             android:text="Política de Privacidade"
-            android:textColor="@color/text_primary"
-            android:textSize="13sp"
+            android:textAllCaps="false"
+            android:textColor="@color/text_secondary"
+            android:textSize="13.5sp"
             app:cornerRadius="12dp"
-            app:strokeColor="@color/stroke_subtle" />
+            app:icon="@drawable/ic_shield_check"
+            app:iconGravity="textStart"
+            app:iconPadding="14dp"
+            app:iconSize="18dp"
+            app:iconTint="@color/text_secondary" />
 
-        <!-- OPÇÃO 3: TERMOS DE SERVIÇO -->
+        <!-- OPÇÃO 4: TERMOS DE SERVIÇO -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMenuTermos"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
+            android:layout_height="46dp"
+            android:layout_marginTop="4dp"
             android:gravity="start|center_vertical"
-            android:paddingHorizontal="14dp"
+            android:letterSpacing="0"
+            android:paddingHorizontal="12dp"
             android:text="Termos de Serviço"
-            android:textColor="@color/text_primary"
-            android:textSize="13sp"
+            android:textAllCaps="false"
+            android:textColor="@color/text_secondary"
+            android:textSize="13.5sp"
             app:cornerRadius="12dp"
-            app:strokeColor="@color/stroke_subtle" />
+            app:icon="@drawable/ic_doc_text"
+            app:iconGravity="textStart"
+            app:iconPadding="14dp"
+            app:iconSize="18dp"
+            app:iconTint="@color/text_secondary" />
 
-        <!-- OPÇÃO 4: CRÉDITOS -->
+        <!-- OPÇÃO 5: CRÉDITOS -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMenuCreditos"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
+            android:layout_height="46dp"
+            android:layout_marginTop="4dp"
+            android:fontFamily="sans-serif-medium"
             android:gravity="start|center_vertical"
-            android:paddingHorizontal="14dp"
+            android:letterSpacing="0"
+            android:paddingHorizontal="12dp"
             android:text="Créditos"
+            android:textAllCaps="false"
             android:textColor="@color/neon_cyan"
-            android:textSize="13sp"
-            android:textStyle="bold"
+            android:textSize="13.5sp"
             app:cornerRadius="12dp"
-            app:strokeColor="@color/stroke_subtle" />
+            app:icon="@drawable/ic_info_badge"
+            app:iconGravity="textStart"
+            app:iconPadding="14dp"
+            app:iconSize="18dp"
+            app:iconTint="@color/neon_cyan" />
 
         <View
             android:layout_width="match_parent"
@@ -1238,25 +1480,25 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginBottom="12dp"
-            android:background="@color/stroke_subtle" />
+            android:layout_marginBottom="14dp"
+            android:background="@color/divider_hairline" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
             android:text="Jean Henrique"
             android:textColor="@color/text_primary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textSize="13.5sp" />
 
         <TextView
             android:id="@+id/txtRodapeMenu"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="TikTok: .memze • Versão 3.2"
+            android:text="TikTok: .memze • Versão 3.4"
             android:textColor="@color/neon_cyan"
-            android:textSize="11sp" />
+            android:textSize="11.5sp" />
 
     </LinearLayout>
 

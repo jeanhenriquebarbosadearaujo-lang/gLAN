@@ -13,19 +13,32 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <ImageView
-            android:layout_width="86dp"
-            android:layout_height="86dp"
-            android:contentDescription="@string/app_name"
-            android:src="@drawable/img_hero_logo" />
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="84dp"
+            android:layout_height="84dp"
+            app:cardBackgroundColor="@color/surface_card"
+            app:cardCornerRadius="22dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/stroke_elevated"
+            app:strokeWidth="1dp">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/app_name"
+                android:scaleType="centerCrop"
+                android:src="@drawable/img_hero_logo" />
+        </com.google.android.material.card.MaterialCardView>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
+            android:layout_marginTop="16dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="-0.02"
             android:text="gLAN"
             android:textColor="@color/text_primary"
-            android:textSize="26sp"
+            android:textSize="28sp"
             android:textStyle="bold" />
 
         <TextView
@@ -33,16 +46,16 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:gravity="center"
-            android:text="Identificação de Conta da Instalação"
+            android:text="Rede Virtual LAN Criptografada"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+            android:textSize="13.5sp" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="28dp"
             app:cardBackgroundColor="@color/surface_card"
-            app:cardCornerRadius="18dp"
+            app:cardCornerRadius="22dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/stroke_subtle"
             app:strokeWidth="1dp">
@@ -51,14 +64,15 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="20dp">
+                android:padding="22dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:letterSpacing="0.08"
                     android:text="CRIAR IDENTIFICAÇÃO"
-                    android:textColor="@color/neon_emerald"
-                    android:textSize="11sp"
+                    android:textColor="@color/neon_cyan"
+                    android:textSize="10.5sp"
                     android:textStyle="bold" />
 
                 <TextView
@@ -66,15 +80,16 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:lineSpacingExtra="3dp"
-                    android:text="Informe o nome que aparecerá para os participantes nas salas. Esta conta é única para esta instalação e permanece salva enquanto o aplicativo não for desinstalado."
+                    android:text="Escolha o nome que aparecerá para os outros jogadores nas salas. Sua conta é única para esta instalação e permanece salva enquanto o aplicativo estiver instalado."
                     android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:textSize="12.5sp" />
 
                 <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.GDroidLAN.TextInputLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:hint="Seu Nome na Sala">
+                    android:layout_marginTop="18dp"
+                    android:hint="Seu nome na sala">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/edtNomeExibicao"
@@ -101,11 +116,13 @@
                     android:id="@+id/btnConfirmarConta"
                     android:layout_width="match_parent"
                     android:layout_height="54dp"
-                    android:layout_marginTop="18dp"
-                    android:text="CRIAR CONTA E ENTRAR"
+                    android:layout_marginTop="20dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="0.02"
+                    android:text="Continuar"
+                    android:textAllCaps="false"
                     android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
+                    android:textSize="15sp"
                     app:backgroundTint="@color/neon_emerald"
                     app:cornerRadius="14dp" />
 
@@ -115,21 +132,21 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="18dp"
             android:gravity="center"
             android:text="Conta única vinculada ao aparelho • Sem senha"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp" />
+            android:textColor="@color/text_tertiary"
+            android:textSize="11.5sp" />
 
         <TextView
+            android:id="@+id/txtRodapeAuth"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="6dp"
             android:gravity="center"
-            android:text="gLAN v3.2 • Criado por Jean Henrique • TikTok: .memze"
+            android:text="gLAN v3.4 • Criado por Jean Henrique • TikTok: .memze"
             android:textColor="@color/neon_cyan"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            android:textSize="11.5sp" />
 
     </LinearLayout>
 </ScrollView>

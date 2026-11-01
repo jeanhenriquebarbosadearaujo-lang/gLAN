@@ -9,20 +9,21 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingHorizontal="20dp"
-        android:paddingTop="8dp"
+        android:paddingTop="10dp"
         android:paddingBottom="16dp">
 
         <!-- IDENTIFICAÇÃO ATUAL -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/surface_elevated"
+            android:background="@drawable/bg_item_surface"
             android:orientation="vertical"
-            android:padding="14dp">
+            android:padding="16dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:letterSpacing="0.08"
                 android:text="CONTA ATIVA NESTE APARELHO"
                 android:textColor="@color/neon_cyan"
                 android:textSize="10sp"
@@ -32,21 +33,21 @@
                 android:id="@+id/txtPerfilNomeAtual"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="6dp"
+                android:fontFamily="sans-serif-medium"
                 android:text="Jogador"
                 android:textColor="@color/text_primary"
-                android:textSize="17sp"
-                android:textStyle="bold" />
+                android:textSize="18sp" />
 
             <TextView
                 android:id="@+id/txtPerfilTagConta"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
+                android:layout_marginTop="3dp"
                 android:fontFamily="monospace"
                 android:text="ID da instalação: #000000"
                 android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:textSize="11.5sp" />
         </LinearLayout>
 
         <!-- ALTERAR NOME -->
@@ -54,14 +55,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:background="@color/surface_elevated"
+            android:background="@drawable/bg_item_surface"
             android:orientation="vertical"
-            android:padding="14dp">
+            android:padding="16dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ALTERAR NOME"
+                android:letterSpacing="0.08"
+                android:text="ALTERAR NOME DE EXIBIÇÃO"
                 android:textColor="@color/neon_cyan"
                 android:textSize="10sp"
                 android:textStyle="bold" />
@@ -69,16 +71,18 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="5dp"
+                android:lineSpacingExtra="2dp"
                 android:text="Escolha um nome único de 2 a 24 caracteres. Palavras +18, ofensivas ou nomes já registrados por outro jogador são recusados."
                 android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:textSize="12sp" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/layoutNovoNomePerfil"
+                style="@style/Widget.GDroidLAN.TextInputLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
                 android:hint="Novo nome de exibição"
                 app:endIconMode="clear_text"
                 app:endIconTint="@color/text_secondary">
@@ -99,7 +103,7 @@
                 android:id="@+id/txtMensagemPerfil"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="10dp"
                 android:textColor="@color/danger_red"
                 android:textSize="12sp"
                 android:visibility="gone" />
@@ -107,7 +111,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="16dp"
                 android:gravity="end"
                 android:orientation="horizontal">
 
@@ -115,23 +119,25 @@
                     android:id="@+id/btnFecharPerfil"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
-                    android:layout_height="40dp"
+                    android:layout_height="42dp"
                     android:layout_marginEnd="8dp"
                     android:text="Cancelar"
+                    android:textAllCaps="false"
                     android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:textSize="13sp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSalvarPerfil"
                     android:layout_width="wrap_content"
-                    android:layout_height="40dp"
-                    android:paddingHorizontal="16dp"
+                    android:layout_height="42dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:paddingHorizontal="18dp"
                     android:text="Salvar Nome"
+                    android:textAllCaps="false"
                     android:textColor="#FFFFFF"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
+                    android:textSize="13sp"
                     app:backgroundTint="@color/neon_emerald"
-                    app:cornerRadius="10dp" />
+                    app:cornerRadius="11dp" />
             </LinearLayout>
         </LinearLayout>
 

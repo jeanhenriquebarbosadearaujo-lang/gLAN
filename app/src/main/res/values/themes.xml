@@ -4,8 +4,38 @@
         <item name="colorPrimary">@color/neon_emerald</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorSecondary">@color/neon_cyan</item>
+        <item name="colorSurface">@color/surface_card</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorSurfaceVariant">@color/surface_elevated</item>
+        <item name="colorOutline">@color/stroke_elevated</item>
         <item name="android:statusBarColor">@color/bg_obsidian</item>
         <item name="android:navigationBarColor">@color/bg_obsidian</item>
         <item name="android:windowBackground">@color/bg_obsidian</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.GDroidLAN.Dialog</item>
+    </style>
+
+    <style name="ThemeOverlay.GDroidLAN.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">@color/surface_card</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorPrimary">@color/neon_cyan</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.GDroidLAN.Dialog</item>
+    </style>
+
+    <style name="ShapeAppearance.GDroidLAN.Dialog" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">22dp</item>
+    </style>
+
+    <style name="Widget.GDroidLAN.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxBackgroundColor">@color/surface_low</item>
+        <item name="boxStrokeColor">@color/stroke_elevated</item>
+        <item name="boxStrokeWidth">1dp</item>
+        <item name="boxStrokeWidthFocused">1.5dp</item>
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
+        <item name="hintTextColor">@color/neon_cyan</item>
     </style>
 </resources>
