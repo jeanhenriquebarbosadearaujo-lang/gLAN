@@ -89,10 +89,33 @@
                 android:textStyle="bold" />
 
             <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/switchMostrarTrafego"
+                android:id="@+id/switchReconectarAuto"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
+                android:checked="true"
+                android:text="Reconectar automático (Wi-Fi / 4G)"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Mantém você na mesma sala e no mesmo IP 10.10.0.x se a internet oscilar ou trocar entre Wi-Fi e dados móveis."
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="10dp"
+                android:background="@color/stroke_subtle" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switchMostrarTrafego"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:checked="true"
                 android:text="Estatísticas de tráfego da sala"
                 android:textColor="@color/text_primary"

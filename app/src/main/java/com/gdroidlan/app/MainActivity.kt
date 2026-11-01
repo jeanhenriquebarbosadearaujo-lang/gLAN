@@ -61,6 +61,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_SHOW_TRAFFIC = "pref_show_traffic_stats"
         private const val PREF_AUTO_PING_LOBBY = "pref_auto_ping_lobby"
         private const val PREF_ROOM_ALERTS = "pref_room_join_leave_alerts"
+        private const val PREF_AUTO_RECONNECT = "pref_auto_reconnect_net"
     }
 
     private lateinit var b: ActivityMainBinding
@@ -76,6 +77,7 @@ class MainActivity : AppCompatActivity() {
     private var limiteJogadores = TunnelProtocol.MAX_TOTAL_PLAYERS
     private var filtroPesquisaServidor = ""
 
+    private var prefReconectarAuto = true
     private var prefMostrarTrafego = true
     private var prefPingLobby = true
     private var prefAvisosSala = true
@@ -220,6 +222,7 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
+        prefReconectarAuto = prefs.getBoolean(PREF_AUTO_RECONNECT, true)
         prefMostrarTrafego = prefs.getBoolean(PREF_SHOW_TRAFFIC, true)
         prefPingLobby = prefs.getBoolean(PREF_AUTO_PING_LOBBY, true)
         prefAvisosSala = prefs.getBoolean(PREF_ROOM_ALERTS, true)
@@ -329,9 +332,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.1"
+            pInfo.versionName ?: "3.2"
         } catch (_: Exception) {
-            "3.1"
+            "3.2"
         }
     }
 
@@ -596,6 +599,7 @@ class MainActivity : AppCompatActivity() {
         bindingConfiguracoesAberto = cfg
 
         atualizarStatusBateriaNoDialogo(cfg)
+        cfg.switchReconectarAuto.isChecked = prefReconectarAuto
         cfg.switchMostrarTrafego.isChecked = prefMostrarTrafego
         cfg.switchPingLobby.isChecked = prefPingLobby
         cfg.switchAvisosSala.isChecked = prefAvisosSala
@@ -604,10 +608,21 @@ class MainActivity : AppCompatActivity() {
             abrirAjustesDeBateriaDoSistema()
         }
 
+        cfg.switchReconectarAuto.setOnCheckedChangeListener { _, isChecked ->
+            prefReconectarAuto = isChecked
+            prefs.edit().putBoolean(PREF_AUTO_RECONNECT, isChecked).apply()
+            if (isSessaoAtiva()) {
+                val upd = criarIntentServicoAutenticado(GdroidLanVpnService.ACTION_SET_AUTO_RECONNECT).apply {
+                    putExtra(GdroidLanVpnService.EXTRA_AUTO_RECONNECT, isChecked)
+                }
+                startService(upd)
+            }
+        }
+
         cfg.switchMostrarTrafego.setOnCheckedChangeListener { _, isChecked ->
             prefMostrarTrafego = isChecked
             prefs.edit().putBoolean(PREF_SHOW_TRAFFIC, isChecked).apply()
-            b.cardEstatisticasRede.visibility = if (isChecked) View.VISIBLE else View.GONE
+            b.cardEstatisticasRede.visibility = if (isChecked && isSessaoAtiva()) View.VISIBLE else View.GONE
         }
 
         cfg.switchPingLobby.setOnCheckedChangeListener { _, isChecked ->
@@ -1346,6 +1361,7 @@ class MainActivity : AppCompatActivity() {
             putExtra(GdroidLanVpnService.EXTRA_MAX_PLAYERS, limiteJogadores)
             putExtra(GdroidLanVpnService.EXTRA_IS_PUBLIC, asHost && salaPublicaSelecionada)
             putExtra(GdroidLanVpnService.EXTRA_ROOM_TITLE, obterTituloSalaAtual())
+            putExtra(GdroidLanVpnService.EXTRA_AUTO_RECONNECT, prefReconectarAuto)
         }
         ContextCompat.startForegroundService(this, i)
     }
@@ -1517,6 +1533,11 @@ class MainActivity : AppCompatActivity() {
                     b.txtBadgeStatus.setTextColor(Color.parseColor("#00E676"))
                     b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#2600E676"))
                 }
+                GdroidLanVpnService.StatusPhase.RECONNECTING -> {
+                    b.txtBadgeStatus.text = "RECONECTANDO"
+                    b.txtBadgeStatus.setTextColor(Color.parseColor("#FFCA28"))
+                    b.txtBadgeStatus.setBackgroundColor(Color.parseColor("#26FFCA28"))
+                }
                 GdroidLanVpnService.StatusPhase.ERROR -> {
                     b.txtBadgeStatus.text = "ERRO"
                     b.txtBadgeStatus.setTextColor(Color.parseColor("#FF5252"))
@@ -1527,8 +1548,11 @@ class MainActivity : AppCompatActivity() {
             if (snap.statusText.isNotBlank() && snap.phase != GdroidLanVpnService.StatusPhase.OFFLINE) {
                 b.txtDetalheStatus.text = snap.statusText
                 b.txtDetalheStatus.setTextColor(
-                    if (snap.phase == GdroidLanVpnService.StatusPhase.ERROR) Color.parseColor("#FF5252")
-                    else Color.parseColor("#94A3B8")
+                    when (snap.phase) {
+                        GdroidLanVpnService.StatusPhase.ERROR -> Color.parseColor("#FF5252")
+                        GdroidLanVpnService.StatusPhase.RECONNECTING -> Color.parseColor("#FFCA28")
+                        else -> Color.parseColor("#94A3B8")
+                    }
                 )
                 b.txtDetalheStatus.visibility = View.VISIBLE
             } else {
@@ -1543,7 +1567,10 @@ class MainActivity : AppCompatActivity() {
 
         if (ativo) {
             b.txtMeuIpVirtual.text = snap.myVirtualIp
-            if (snap.pingMs > 0L) {
+            if (snap.phase == GdroidLanVpnService.StatusPhase.RECONNECTING) {
+                b.txtPingRota.text = "Reconectando..."
+                b.txtPingRota.setTextColor(Color.parseColor("#FFCA28"))
+            } else if (snap.pingMs > 0L) {
                 b.txtPingRota.text = "${snap.pingMs} ms (${snap.routeMode})"
                 b.txtPingRota.setTextColor(corPorPing(snap.pingMs))
             } else {
@@ -1616,6 +1643,11 @@ class MainActivity : AppCompatActivity() {
                     row.txtPingParticipante.text = "0 ms"
                     row.txtPingParticipante.setTextColor(Color.parseColor("#00E676"))
                     row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#00E676"))
+                }
+                membro.routeLabel == "Reconectando" -> {
+                    row.txtPingParticipante.text = "..."
+                    row.txtPingParticipante.setTextColor(Color.parseColor("#FFCA28"))
+                    row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FFCA28"))
                 }
                 membro.pingMs > 0L -> {
                     val cor = corPorPing(membro.pingMs)

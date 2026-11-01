@@ -20,6 +20,7 @@ import javax.net.ssl.SSLSocketFactory
 /**
  * Cliente MQTT 3.1.1 binário endurecido com TLS 1.2/1.3 obrigatório,
  * verificação estrita de hostname do certificado X.509 (anti-MITM),
+ * reconexão rápida em troca de rede (Wi-Fi <-> 4G/5G),
  * limite máximo de frame (anti-OOM) e suporte a VpnService.protect(socket).
  */
 class MqttLightClient(
@@ -41,6 +42,7 @@ class MqttLightClient(
 
     private val running = AtomicBoolean(false)
     private val connected = AtomicBoolean(false)
+    private val manualReconnectRequested = AtomicBoolean(false)
     private val packetIdGen = AtomicInteger(1)
     private val writeLock = Any()
     private val subscribedTopics = CopyOnWriteArraySet<String>()
@@ -51,18 +53,23 @@ class MqttLightClient(
     @Volatile
     private var activeOut: OutputStream? = null
 
+    @Volatile
+    private var workerThread: Thread? = null
+
     fun isConnected(): Boolean = connected.get()
 
     fun start(initialTopics: List<String>) {
         subscribedTopics.addAll(initialTopics)
         if (!running.compareAndSet(false, true)) return
 
-        Thread({
+        val t = Thread({
             var brokerIdx = 0
             while (running.get()) {
                 val ep = brokers[brokerIdx % brokers.size]
+                manualReconnectRequested.set(false)
+                var connectedOnceInAttempt = false
                 try {
-                    runSession(ep)
+                    runSession(ep) { connectedOnceInAttempt = true }
                 } catch (_: Throwable) {
                 } finally {
                     val wasConn = connected.getAndSet(false)
@@ -72,14 +79,34 @@ class MqttLightClient(
                     }
                 }
                 if (!running.get()) break
-                brokerIdx++
+
+                val fastHandover = manualReconnectRequested.getAndSet(false)
+                if (!fastHandover && !connectedOnceInAttempt) {
+                    brokerIdx++
+                }
+                val sleepMs = if (fastHandover) 250L else 1200L
                 try {
-                    Thread.sleep(1500L)
+                    Thread.sleep(sleepMs)
                 } catch (_: InterruptedException) {
-                    break
+                    if (!running.get()) break
                 }
             }
-        }, "gdroid-mqtt-loop").apply { isDaemon = true }.start()
+        }, "gdroid-mqtt-loop").apply { isDaemon = true }
+        workerThread = t
+        t.start()
+    }
+
+    /**
+     * Aborta imediatamente o socket preso na interface antiga (ex.: queda do Wi-Fi para 4G/5G)
+     * e reconecta em ~250ms pela nova rota física ativa.
+     */
+    fun forceReconnectNow() {
+        if (!running.get()) return
+        manualReconnectRequested.set(true)
+        closeQuietly()
+        try {
+            workerThread?.interrupt()
+        } catch (_: Exception) { }
     }
 
     fun subscribe(topic: String) {
@@ -145,15 +172,19 @@ class MqttLightClient(
         } catch (_: Exception) { }
         closeQuietly()
         connected.set(false)
+        try {
+            workerThread?.interrupt()
+        } catch (_: Exception) { }
+        workerThread = null
     }
 
-    private fun runSession(ep: BrokerEndpoint) {
+    private fun runSession(ep: BrokerEndpoint, onHandshakeReady: () -> Unit) {
         val rawSocket = Socket()
         socketProtector(rawSocket)
         rawSocket.tcpNoDelay = true
         rawSocket.keepAlive = true
-        rawSocket.connect(InetSocketAddress(ep.host, ep.port), 9_000)
-        rawSocket.soTimeout = 45_000
+        rawSocket.connect(InetSocketAddress(ep.host, ep.port), 7_500)
+        rawSocket.soTimeout = 22_000
 
         val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
         val ssl = sslFactory.createSocket(rawSocket, ep.host, ep.port, true) as SSLSocket
@@ -180,7 +211,7 @@ class MqttLightClient(
         activeOut = output
 
         val clientId = ("gdl_" + UUID.randomUUID().toString().replace("-", "").take(14)).toByteArray(Charsets.UTF_8)
-        val varHeader = byteArrayOf(0x00, 0x04, 'M'.code.toByte(), 'Q'.code.toByte(), 'T'.code.toByte(), 'T'.code.toByte(), 0x04, 0x02, 0x00, 0x28)
+        val varHeader = byteArrayOf(0x00, 0x04, 'M'.code.toByte(), 'Q'.code.toByte(), 'T'.code.toByte(), 'T'.code.toByte(), 0x04, 0x02, 0x00, 0x18)
         val payloadLen = 2 + clientId.size
         val connectPacket = ByteArrayOutputStream()
         connectPacket.write(0x10)
@@ -204,6 +235,7 @@ class MqttLightClient(
         }
 
         connected.set(true)
+        onHandshakeReady()
         if (subscribedTopics.isNotEmpty()) {
             sendSubscribe(subscribedTopics.toList())
         }
@@ -212,8 +244,8 @@ class MqttLightClient(
         val keepaliveThread = Thread({
             while (running.get() && connected.get() && activeSocket === ssl) {
                 try {
-                    Thread.sleep(18_000L)
-                    if (!running.get() || !connected.get()) break
+                    Thread.sleep(12_000L)
+                    if (!running.get() || !connected.get() || activeSocket !== ssl) break
                     var shouldStop = false
                     synchronized(writeLock) {
                         val out = activeOut
@@ -226,13 +258,14 @@ class MqttLightClient(
                     }
                     if (shouldStop) break
                 } catch (_: Exception) {
+                    closeQuietly()
                     break
                 }
             }
         }, "gdroid-mqtt-ping").apply { isDaemon = true }
         keepaliveThread.start()
 
-        while (running.get()) {
+        while (running.get() && activeSocket === ssl) {
             val header = input.read()
             if (header < 0) throw EOFException("Conexão encerrada")
             val packetType = (header ushr 4) and 0x0F

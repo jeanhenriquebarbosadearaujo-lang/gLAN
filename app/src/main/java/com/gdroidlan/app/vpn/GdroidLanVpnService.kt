@@ -7,10 +7,14 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.gdroidlan.app.MainActivity
@@ -43,6 +47,7 @@ class GdroidLanVpnService : VpnService() {
         CONNECTING,
         WAITING_FRIEND,
         ONLINE,
+        RECONNECTING,
         ERROR
     }
 
@@ -83,8 +88,13 @@ class GdroidLanVpnService : VpnService() {
         fun isDirectActive(now: Long = System.currentTimeMillis()): Boolean =
             activeDirectEndpoint != null && (now - lastDirectRxAt) < 8_500L
 
-        fun isAlive(now: Long = System.currentTimeMillis()): Boolean =
-            (now - lastAnyRxAt) < 38_000L
+        fun isOscillating(now: Long = System.currentTimeMillis()): Boolean =
+            (now - lastAnyRxAt) >= 12_000L
+
+        fun isAlive(now: Long = System.currentTimeMillis(), extendedGrace: Boolean = true): Boolean {
+            val timeoutMs = if (extendedGrace) 75_000L else 38_000L
+            return (now - lastAnyRxAt) < timeoutMs
+        }
     }
 
     companion object {
@@ -94,6 +104,7 @@ class GdroidLanVpnService : VpnService() {
         const val ACTION_MANUAL_PING = "com.gdroidlan.app.MANUAL_PING"
         const val ACTION_KICK_PEER = "com.gdroidlan.app.KICK_PEER"
         const val ACTION_CLEAR_BLOCKS = "com.gdroidlan.app.CLEAR_BLOCKS"
+        const val ACTION_SET_AUTO_RECONNECT = "com.gdroidlan.app.SET_AUTO_RECONNECT"
 
         const val EXTRA_CALLER_TOKEN = "caller_token"
         const val EXTRA_ROOM_CODE = "room_code"
@@ -104,12 +115,14 @@ class GdroidLanVpnService : VpnService() {
         const val EXTRA_ROOM_TITLE = "room_title"
         const val EXTRA_TARGET_NODE_ID = "target_node_id"
         const val EXTRA_BLOCK_SESSION = "block_session"
+        const val EXTRA_AUTO_RECONNECT = "auto_reconnect"
 
         val INTERNAL_CALLER_TOKEN: String = UUID.randomUUID().toString()
 
         private const val CHANNEL_ID = "gdroid_lan_vpn_channel"
         private const val NOTIF_ID = 4101
         private const val MAX_HANDSHAKE_PACKETS_PER_SEC = 18
+        private const val CLIENT_RECONNECT_MAX_MS = 90_000L
 
         @Volatile
         var currentSnapshot: TunnelSnapshot = TunnelSnapshot()
@@ -148,12 +161,17 @@ class GdroidLanVpnService : VpnService() {
 
     private val handshakeWindowSec = AtomicLong(0L)
     private val handshakeCountInSec = AtomicInteger(0)
+    private val lastHandoverElapsedMs = AtomicLong(0L)
 
     private var wakeLock: PowerManager.WakeLock? = null
-    private var tunInterface: ParcelFileDescriptor? = null
-    private var tunOutStream: FileOutputStream? = null
-    private var udpSocket: DatagramSocket? = null
-    private var mqttClient: MqttLightClient? = null
+    @Volatile private var tunInterface: ParcelFileDescriptor? = null
+    @Volatile private var tunBoundNodeId: Int = 0
+    @Volatile private var tunOutStream: FileOutputStream? = null
+    @Volatile private var udpSocket: DatagramSocket? = null
+    @Volatile private var mqttClient: MqttLightClient? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var activePhysicalNetHandle: Long = 0L
+    @Volatile private var hasPhysicalInternet: Boolean = true
 
     private var isHostRole = true
     private var activeRoomCode = ""
@@ -163,6 +181,8 @@ class GdroidLanVpnService : VpnService() {
     @Volatile private var clientToHostPairwise: RoomCrypto.PairwiseCipher? = null
     @Volatile private var pinnedHostPubKey: PublicKey? = null
 
+    @Volatile private var autoReconnectEnabled = true
+    @Volatile private var wasReconnectingToastShown = false
     @Volatile private var myDisplayName = "Jogador"
     @Volatile private var myAccountUid = 0L
     @Volatile private var maxTotalPlayers = TunnelProtocol.MAX_TOTAL_PLAYERS
@@ -179,6 +199,7 @@ class GdroidLanVpnService : VpnService() {
 
     private val peersByNode = ConcurrentHashMap<Int, PeerNode>()
     private val sessionToNode = ConcurrentHashMap<Long, Int>()
+    private val reservedNodeByUid = ConcurrentHashMap<Long, Int>()
     private val blockedSessions = ConcurrentHashMap.newKeySet<Long>()
     private val blockedAccountUids = ConcurrentHashMap.newKeySet<Long>()
     private val blockedPlayerNames = ConcurrentHashMap<String, String>()
@@ -199,6 +220,14 @@ class GdroidLanVpnService : VpnService() {
                 stopTunnelSession(userRequested = true)
                 stopSelf()
                 return START_NOT_STICKY
+            }
+
+            ACTION_SET_AUTO_RECONNECT -> {
+                autoReconnectEnabled = intent.getBooleanExtra(EXTRA_AUTO_RECONNECT, true)
+                if (sessionRunning.get()) {
+                    refreshSnapshotUi()
+                }
+                return START_STICKY
             }
 
             ACTION_MANUAL_PING -> {
@@ -256,6 +285,7 @@ class GdroidLanVpnService : VpnService() {
                 myAccountUid = intent.getLongExtra(EXTRA_ACCOUNT_UID, 0L)
                 maxTotalPlayers = intent.getIntExtra(EXTRA_MAX_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
                     .coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
+                autoReconnectEnabled = intent.getBooleanExtra(EXTRA_AUTO_RECONNECT, true)
 
                 val wantHost = (intent.action == ACTION_START_HOST)
                 isPublicRoom = wantHost && intent.getBooleanExtra(EXTRA_IS_PUBLIC, false)
@@ -291,6 +321,145 @@ class GdroidLanVpnService : VpnService() {
     }
 
     // =========================================================================
+    // MONITORAMENTO DE REDE FÍSICA (ROAMING AUTOMÁTICO WI-FI <-> 4G/5G)
+    // =========================================================================
+
+    private fun registerPhysicalNetworkMonitor(gen: Long) {
+        unregisterPhysicalNetworkMonitor()
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (!sessionRunning.get() || sessionGeneration.get() != gen) return
+                val caps = try { cm.getNetworkCapabilities(network) } catch (_: Exception) { null }
+                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                    return
+                }
+
+                hasPhysicalInternet = true
+                try {
+                    setUnderlyingNetworks(arrayOf(network))
+                } catch (_: Exception) { }
+
+                val newHandle = network.networkHandle
+                val prevHandle = activePhysicalNetHandle
+                activePhysicalNetHandle = newHandle
+
+                if (prevHandle != 0L && prevHandle != newHandle && autoReconnectEnabled) {
+                    triggerSeamlessNetworkHandover(gen)
+                } else {
+                    refreshSnapshotUi()
+                }
+            }
+
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                if (!sessionRunning.get() || sessionGeneration.get() != gen) return
+                if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return
+                val validated = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                if (validated && !hasPhysicalInternet) {
+                    hasPhysicalInternet = true
+                    try {
+                        setUnderlyingNetworks(arrayOf(network))
+                    } catch (_: Exception) { }
+                    if (autoReconnectEnabled) {
+                        triggerSeamlessNetworkHandover(gen)
+                    } else {
+                        refreshSnapshotUi()
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                if (!sessionRunning.get() || sessionGeneration.get() != gen) return
+                if (network.networkHandle == activePhysicalNetHandle) {
+                    val activeNow = try { cm.activeNetwork } catch (_: Exception) { null }
+                    val activeCaps = try {
+                        if (activeNow != null) cm.getNetworkCapabilities(activeNow) else null
+                    } catch (_: Exception) {
+                        null
+                    }
+                    val stillHasNonVpn = activeNow != null &&
+                        activeCaps != null &&
+                        !activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                        activeCaps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+
+                    hasPhysicalInternet = stillHasNonVpn
+                    if (!stillHasNonVpn) {
+                        activePhysicalNetHandle = 0L
+                        try {
+                            setUnderlyingNetworks(null)
+                        } catch (_: Exception) { }
+                    } else {
+                        activePhysicalNetHandle = activeNow!!.networkHandle
+                        try {
+                            setUnderlyingNetworks(arrayOf(activeNow))
+                        } catch (_: Exception) { }
+                        if (autoReconnectEnabled) {
+                            triggerSeamlessNetworkHandover(gen)
+                        }
+                    }
+                    refreshSnapshotUi()
+                }
+            }
+        }
+
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+            networkCallback = cb
+        } catch (_: Exception) { }
+    }
+
+    private fun unregisterPhysicalNetworkMonitor() {
+        val cb = networkCallback ?: return
+        networkCallback = null
+        activePhysicalNetHandle = 0L
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            cm?.unregisterNetworkCallback(cb)
+        } catch (_: Exception) { }
+    }
+
+    private fun triggerSeamlessNetworkHandover(gen: Long) {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val prev = lastHandoverElapsedMs.get()
+        if (nowElapsed - prev < 900L) return
+        if (!lastHandoverElapsedMs.compareAndSet(prev, nowElapsed)) return
+
+        Thread({
+            if (!sessionRunning.get() || sessionGeneration.get() != gen) return@Thread
+            try {
+                // 1. Limpa endpoints P2P antigos para rotear imediatamente pela ponte TLS enquanto refaz STUN
+                for (peer in peersByNode.values) {
+                    peer.activeDirectEndpoint = null
+                }
+                myPublicEndpoint = null
+
+                // 2. Recria socket UDP protegido na nova interface física (Wi-Fi ou 4G/5G)
+                val newSock = DatagramSocket(0).apply {
+                    reuseAddress = true
+                    receiveBufferSize = 256 * 1024
+                    sendBufferSize = 256 * 1024
+                }
+                protect(newSock)
+                val oldSock = udpSocket
+                udpSocket = newSock
+                try {
+                    oldSock?.close()
+                } catch (_: Exception) { }
+
+                myLocalEndpoint = StunClient.findLocalLanAddress(newSock.localPort)
+                startUdpReaderLoop(newSock, gen)
+                StunClient.sendBindingRequests(newSock)
+
+                // 3. Reconecta imediatamente o canal TLS MQTT na nova rede sem esperar timeout TCP
+                mqttClient?.forceReconnectNow()
+
+                refreshSnapshotUi()
+            } catch (_: Exception) { }
+        }, "gdroid-net-handover").apply { isDaemon = true }.start()
+    }
+
+    // =========================================================================
     // CICLO DE VIDA DA SESSÃO
     // =========================================================================
 
@@ -306,9 +475,12 @@ class GdroidLanVpnService : VpnService() {
         clientToHostPairwise = null
         pinnedHostPubKey = null
         clientSessionId = rng.nextLong()
+        wasReconnectingToastShown = false
+        hasPhysicalInternet = true
 
         peersByNode.clear()
         sessionToNode.clear()
+        reservedNodeByUid.clear()
         blockedSessions.clear()
         blockedAccountUids.clear()
         blockedPlayerNames.clear()
@@ -320,6 +492,7 @@ class GdroidLanVpnService : VpnService() {
         sessionRunning.set(true)
 
         acquireWakeLockSafe()
+        registerPhysicalNetworkMonitor(gen)
         startForegroundSafe(
             if (asHost) "Servidor seguro • Sala $roomCode (10.10.0.1)"
             else "Conectando na sala $roomCode..."
@@ -356,7 +529,7 @@ class GdroidLanVpnService : VpnService() {
                 StunClient.sendBindingRequests(dgram)
 
                 if (asHost) {
-                    if (!establishTunInterface(TunnelProtocol.HOST_NODE_ID, gen)) {
+                    if (!ensureTunInterfaceForNode(TunnelProtocol.HOST_NODE_ID, gen)) {
                         failAndStop("Permissão de VPN recusada ou indisponível no aparelho.")
                         return@Thread
                     }
@@ -387,13 +560,20 @@ class GdroidLanVpnService : VpnService() {
                     onConnectionStateChanged = { isConn, _ ->
                         if (sessionGeneration.get() != gen || !sessionRunning.get()) return@MqttLightClient
                         if (isConn) {
+                            udpSocket?.let { StunClient.sendBindingRequests(it) }
                             if (asHost) {
+                                broadcastMyCandidates()
+                                sendImmediatePingToPeers()
                                 broadcastRosterFromHost()
                                 refreshSnapshotUi()
                             } else if (myNodeId == 0) {
                                 sendClientJoinRequest()
                             } else {
+                                // Reconectou após oscilação mantendo a mesma sessão e o mesmo IP 10.10.0.x
+                                sendClientJoinRequest()
                                 broadcastMyCandidates()
+                                sendImmediatePingToPeers()
+                                refreshSnapshotUi()
                             }
                         } else {
                             refreshSnapshotUi()
@@ -416,21 +596,36 @@ class GdroidLanVpnService : VpnService() {
         }, "gdroid-session-init").start()
     }
 
-    private fun establishTunInterface(nodeId: Int, gen: Long): Boolean {
-        if (tunInterface != null) return true
-        val virtualIp = TunnelProtocol.nodeIp(nodeId)
-        val pfd = Builder()
-            .setSession("gLAN ($activeRoomCode)")
-            .setMtu(TunnelProtocol.VPN_MTU)
-            .setBlocking(true)
-            .addAddress(virtualIp, 24)
-            .addRoute("10.10.0.0", 24)
-            .establish() ?: return false
+    private fun ensureTunInterfaceForNode(nodeId: Int, gen: Long): Boolean {
+        synchronized(tunWriteLock) {
+            if (tunInterface != null && tunBoundNodeId == nodeId) {
+                return true
+            }
+            try {
+                tunOutStream?.close()
+            } catch (_: Exception) { }
+            tunOutStream = null
+            try {
+                tunInterface?.close()
+            } catch (_: Exception) { }
+            tunInterface = null
+            tunBoundNodeId = 0
 
-        tunInterface = pfd
-        tunOutStream = FileOutputStream(pfd.fileDescriptor)
-        startTunReaderLoop(pfd, gen)
-        return true
+            val virtualIp = TunnelProtocol.nodeIp(nodeId)
+            val pfd = Builder()
+                .setSession("gLAN ($activeRoomCode)")
+                .setMtu(TunnelProtocol.VPN_MTU)
+                .setBlocking(true)
+                .addAddress(virtualIp, 24)
+                .addRoute("10.10.0.0", 24)
+                .establish() ?: return false
+
+            tunInterface = pfd
+            tunBoundNodeId = nodeId
+            tunOutStream = FileOutputStream(pfd.fileDescriptor)
+            startTunReaderLoop(pfd, gen)
+            return true
+        }
     }
 
     // =========================================================================
@@ -440,6 +635,9 @@ class GdroidLanVpnService : VpnService() {
     private fun kickPeerFromServer(targetNode: Int, blockInSession: Boolean) {
         val peer = peersByNode.remove(targetNode) ?: return
         sessionToNode.remove(peer.sessionId)
+        if (peer.accountUid != 0L) {
+            reservedNodeByUid.remove(peer.accountUid)
+        }
         if (blockInSession) {
             blockedSessions.add(peer.sessionId)
             if (peer.accountUid != 0L) {
@@ -503,10 +701,14 @@ class GdroidLanVpnService : VpnService() {
             )
         )
         val sortedClients = peersByNode.values
-            .filter { it.isAlive(now) }
+            .filter { it.isAlive(now, autoReconnectEnabled) }
             .sortedBy { it.nodeId }
         for (p in sortedClients) {
-            val route = if (p.isDirectActive(now)) "P2P" else "Ponte"
+            val route = when {
+                p.isOscillating(now) -> "Reconectando"
+                p.isDirectActive(now) -> "P2P"
+                else -> "Ponte"
+            }
             list.add(
                 TunnelProtocol.RoomMemberInfo(
                     nodeId = p.nodeId,
@@ -537,10 +739,11 @@ class GdroidLanVpnService : VpnService() {
     private fun publishPublicLobbyBeacon(currentCount: Int = -1) {
         if (!isHostRole || !isPublicRoom || !sessionRunning.get()) return
         val identity = sessionIdentity ?: return
+        val now = System.currentTimeMillis()
         val count = if (currentCount > 0) {
             currentCount
         } else {
-            1 + peersByNode.values.count { it.isAlive() }
+            1 + peersByNode.values.count { it.isAlive(now, autoReconnectEnabled) }
         }
         val beacon = PublicLobbyBrowser.buildOpenBeaconEncrypted(
             identity = identity,
@@ -596,7 +799,7 @@ class GdroidLanVpnService : VpnService() {
                         sendPairwiseFromClientToHost(plainFrame, isGamePacket = true)
                     }
                 } catch (_: Exception) {
-                    if (!sessionRunning.get() || sessionGeneration.get() != gen) break
+                    if (!sessionRunning.get() || sessionGeneration.get() != gen || tunInterface !== pfd) break
                 }
             }
         }, "gdroid-tun-rx").start()
@@ -636,7 +839,7 @@ class GdroidLanVpnService : VpnService() {
                     val remoteAddr = InetSocketAddress(dp.address, dp.port)
                     handleEncryptedNetworkPacket(copy, viaUdpFrom = remoteAddr)
                 } catch (_: Exception) {
-                    if (!sessionRunning.get() || sessionGeneration.get() != gen) break
+                    if (!sessionRunning.get() || sessionGeneration.get() != gen || udpSocket !== sock) break
                 }
             }
         }, "gdroid-udp-rx").apply { isDaemon = true }.start()
@@ -682,7 +885,7 @@ class GdroidLanVpnService : VpnService() {
             TunnelProtocol.TYPE_PROBE_REQ -> {
                 if (!isHostRole || !allowHandshakeRate(now)) return
                 val probe = TunnelProtocol.parseProbeReq(plain) ?: return
-                val aliveTotal = 1 + peersByNode.values.count { it.isAlive(now) }
+                val aliveTotal = 1 + peersByNode.values.count { it.isAlive(now, autoReconnectEnabled) }
                 val status = when {
                     probe.accountUid != 0L && blockedAccountUids.contains(probe.accountUid) ->
                         TunnelProtocol.PROBE_STATUS_BLOCKED
@@ -716,7 +919,9 @@ class GdroidLanVpnService : VpnService() {
                     return
                 }
 
-                val existingBySession = sessionToNode[req.sessionId]?.takeIf { peersByNode[it]?.isAlive(now) == true }
+                val existingBySession = sessionToNode[req.sessionId]?.takeIf {
+                    peersByNode[it]?.isAlive(now, autoReconnectEnabled) == true
+                }
                 val existingByUid = if (existingBySession == null && req.accountUid != 0L) {
                     peersByNode.values.firstOrNull { it.accountUid == req.accountUid }?.nodeId
                 } else {
@@ -725,7 +930,7 @@ class GdroidLanVpnService : VpnService() {
                 val existingNode = existingBySession ?: existingByUid
 
                 val maxGuests = (maxTotalPlayers - 1).coerceIn(1, 7)
-                val aliveGuests = peersByNode.values.count { it.isAlive(now) }
+                val aliveGuests = peersByNode.values.count { it.isAlive(now, autoReconnectEnabled) }
                 if (existingNode == null && aliveGuests >= maxGuests) {
                     val rej = roomCipher?.encrypt(
                         TunnelProtocol.buildJoinReject(
@@ -737,24 +942,35 @@ class GdroidLanVpnService : VpnService() {
                     return
                 }
 
-                val assigned = existingNode ?: assignNodeForClient(req.sessionId)
+                val assigned = existingNode ?: assignNodeForClient(
+                    sessionId = req.sessionId,
+                    accountUid = req.accountUid,
+                    preferredNodeId = req.preferredNodeId
+                )
                 if (assigned < 0) {
                     val rej = roomCipher?.encrypt(
-                        TunnelProtocol.buildJoinReject(req.sessionId, "Sala cheia ($maxTotalPlayers/$maxTotalPlayers jogadores).")
+                        TunnelProtocol.buildJoinReject(
+                            req.sessionId,
+                            "Sala cheia ($maxTotalPlayers/$maxTotalPlayers jogadores)."
+                        )
                     ) ?: return
                     mqttClient?.publish("$topicRoot/h2c/ctl", rej)
                     return
                 }
 
+                if (req.accountUid != 0L) {
+                    reservedNodeByUid[req.accountUid] = assigned
+                }
                 if (existingByUid != null) {
-                    peersByNode[existingByUid]?.sessionId?.let { oldSid ->
-                        if (oldSid != req.sessionId) sessionToNode.remove(oldSid)
+                    val oldPeer = peersByNode[existingByUid]
+                    if (oldPeer != null && oldPeer.sessionId != req.sessionId) {
+                        sessionToNode.remove(oldPeer.sessionId)
                     }
                     sessionToNode[req.sessionId] = assigned
                 }
 
                 val pairwise = hostId.derivePairwiseCipher(clientPub, activeRoomCode, assigned)
-                val isBrandNewJoin = (existingNode == null)
+                val isBrandNewJoin = (existingNode == null && peersByNode[assigned] == null)
                 val peer = peersByNode[assigned]
                 if (peer == null) {
                     peersByNode[assigned] = PeerNode(assigned, req.sessionId, req.accountUid, req.displayName, pairwise)
@@ -763,6 +979,8 @@ class GdroidLanVpnService : VpnService() {
                     peer.accountUid = req.accountUid
                     peer.displayName = req.displayName
                     peer.pairwiseCipher = pairwise
+                    peer.activeDirectEndpoint = null
+                    peer.candidateEndpoints.clear()
                     peer.lastAnyRxAt = now
                 }
 
@@ -822,21 +1040,33 @@ class GdroidLanVpnService : VpnService() {
                     hostPeer.lastAnyRxAt = now
                 }
 
-                if (myNodeId == 0) {
+                val prevNode = myNodeId
+                if (prevNode != ack.assignedNodeId) {
+                    if (prevNode > 0) {
+                        mqttClient?.unsubscribe("$topicRoot/h2c/pkt/$prevNode")
+                    }
                     myNodeId = ack.assignedNodeId
                     mqttClient?.subscribe("$topicRoot/h2c/pkt/${ack.assignedNodeId}")
-                    if (!establishTunInterface(ack.assignedNodeId, sessionGeneration.get())) {
+                    if (!ensureTunInterfaceForNode(ack.assignedNodeId, sessionGeneration.get())) {
                         failAndStop("Não foi possível criar a interface VPN no Android.")
                         return
                     }
-                    broadcastMyCandidates()
-                    sendImmediatePingToPeers()
+                } else {
+                    mqttClient?.forceResubscribe("$topicRoot/h2c/pkt/${ack.assignedNodeId}")
                 }
+
+                if (wasReconnectingToastShown) {
+                    wasReconnectingToastShown = false
+                    onModerationEventToast?.invoke("Conexão restabelecida automaticamente (${TunnelProtocol.nodeIp(myNodeId)}).")
+                }
+
+                broadcastMyCandidates()
+                sendImmediatePingToPeers()
                 refreshSnapshotUi()
             }
 
             TunnelProtocol.TYPE_JOIN_REJECT -> {
-                if (isHostRole || myNodeId != 0) return
+                if (isHostRole) return
                 val rej = TunnelProtocol.parseRejectOrKick(plain) ?: return
                 if (rej.sessionId == clientSessionId) {
                     failAndStop(rej.reason)
@@ -888,6 +1118,11 @@ class GdroidLanVpnService : VpnService() {
             peer.lastDirectRxAt = now
         }
 
+        if (!isHostRole && wasReconnectingToastShown) {
+            wasReconnectingToastShown = false
+            onModerationEventToast?.invoke("Conexão restabelecida automaticamente (${TunnelProtocol.nodeIp(myNodeId)}).")
+        }
+
         when (plain[0]) {
             TunnelProtocol.TYPE_KICK -> {
                 if (isHostRole || authenticatedSender != TunnelProtocol.HOST_NODE_ID) return
@@ -903,7 +1138,10 @@ class GdroidLanVpnService : VpnService() {
                 if (frameSender != authenticatedSender) return
                 val endpoints = TunnelProtocol.parseCandidatesEndpoints(plain.copyOfRange(2, plain.size))
                 for (ep in endpoints) {
-                    if (ep !in peer.candidateEndpoints && peer.candidateEndpoints.size < 8) {
+                    if (ep !in peer.candidateEndpoints) {
+                        if (peer.candidateEndpoints.size >= 8) {
+                            peer.candidateEndpoints.removeAt(0)
+                        }
                         peer.candidateEndpoints.add(ep)
                     }
                 }
@@ -974,7 +1212,7 @@ class GdroidLanVpnService : VpnService() {
                         dstNode == TunnelProtocol.BROADCAST_NODE_ID -> {
                             writeIpv4ToTun(plain, 3, payloadLen)
                             for ((otherId, otherPeer) in peersByNode) {
-                                if (otherId != senderNode && otherPeer.isAlive(now)) {
+                                if (otherId != senderNode && otherPeer.isAlive(now, autoReconnectEnabled)) {
                                     sendPairwiseToSpecificClient(otherId, plain, isGamePacket = true)
                                 }
                             }
@@ -1000,6 +1238,9 @@ class GdroidLanVpnService : VpnService() {
                     val removed = peersByNode.remove(senderNode)
                     if (removed != null) {
                         sessionToNode.remove(removed.sessionId)
+                        if (removed.accountUid != 0L) {
+                            reservedNodeByUid.remove(removed.accountUid)
+                        }
                         broadcastRosterFromHost()
                         refreshSnapshotUi()
                         onModerationEventToast?.invoke("${removed.displayName} saiu da sala.")
@@ -1015,12 +1256,39 @@ class GdroidLanVpnService : VpnService() {
     // ENVIO HÍBRIDO AUTENTICADO (UDP P2P -> PONTE TLS)
     // =========================================================================
 
-    private fun assignNodeForClient(sessionId: Long): Int {
+    private fun assignNodeForClient(
+        sessionId: Long,
+        accountUid: Long,
+        preferredNodeId: Int
+    ): Int {
         sessionToNode[sessionId]?.let { return it }
         val now = System.currentTimeMillis()
+
+        // 1. Tenta preservar o slot reservado da mesma conta para não alterar o IP 10.10.0.x na reconexão
+        if (accountUid != 0L) {
+            val reserved = reservedNodeByUid[accountUid]
+            if (reserved != null && reserved in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID) {
+                val occ = peersByNode[reserved]
+                if (occ == null || occ.accountUid == accountUid || !occ.isAlive(now, autoReconnectEnabled)) {
+                    sessionToNode[sessionId] = reserved
+                    return reserved
+                }
+            }
+        }
+
+        // 2. Tenta honrar o nó preferido informado pelo cliente em reconexão
+        if (preferredNodeId in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID) {
+            val occ = peersByNode[preferredNodeId]
+            if (occ == null || !occ.isAlive(now, autoReconnectEnabled)) {
+                sessionToNode[sessionId] = preferredNodeId
+                return preferredNodeId
+            }
+        }
+
+        // 3. Aloca o primeiro slot livre de 2 a 8
         for (candidate in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID) {
             val existing = peersByNode[candidate]
-            if (existing == null || !existing.isAlive(now)) {
+            if (existing == null || !existing.isAlive(now, autoReconnectEnabled)) {
                 sessionToNode[sessionId] = candidate
                 return candidate
             }
@@ -1052,7 +1320,7 @@ class GdroidLanVpnService : VpnService() {
     private fun sendPairwiseToAllAliveClients(plainFrame: ByteArray, isGamePacket: Boolean) {
         val now = System.currentTimeMillis()
         for ((nodeId, peer) in peersByNode) {
-            if (peer.isAlive(now)) {
+            if (peer.isAlive(now, autoReconnectEnabled)) {
                 sendPairwiseToSpecificClient(nodeId, plainFrame, isGamePacket)
             }
         }
@@ -1079,7 +1347,8 @@ class GdroidLanVpnService : VpnService() {
             sessionId = clientSessionId,
             accountUid = myAccountUid,
             displayName = myDisplayName,
-            clientPubKeyB64 = myId.publicKeyBase64
+            clientPubKeyB64 = myId.publicKeyBase64,
+            preferredNodeId = myNodeId
         )
         val enc = roomCipher?.encrypt(frame) ?: return
         mqttClient?.publish("$topicRoot/c2h/ctl", enc)
@@ -1112,7 +1381,7 @@ class GdroidLanVpnService : VpnService() {
         if (me <= 0) return
         val now = System.currentTimeMillis()
         if (isHostRole) {
-            for (p in peersByNode.values.filter { it.isAlive(now) }) {
+            for (p in peersByNode.values.filter { it.isAlive(now, autoReconnectEnabled) }) {
                 val pingPlain = TunnelProtocol.buildPing(me, p.nodeId, now)
                 if (!p.isDirectActive(now)) punchUdpTowardPeer(p)
                 sendPairwiseToSpecificClient(p.nodeId, pingPlain, isGamePacket = false)
@@ -1128,7 +1397,7 @@ class GdroidLanVpnService : VpnService() {
     }
 
     // =========================================================================
-    // LOOP DE MANUTENÇÃO E UI
+    // LOOP DE MANUTENÇÃO, DETECÇÃO DE OSCILAÇÃO E AUTO-RECONNECT
     // =========================================================================
 
     private fun startMaintenanceLoop(gen: Long) {
@@ -1146,7 +1415,7 @@ class GdroidLanVpnService : VpnService() {
                 val now = System.currentTimeMillis()
 
                 if (!isHostRole && myNodeId == 0) {
-                    if (now - startedAt > 6_000L) {
+                    if (now - startedAt > 7_500L) {
                         failAndStop("Essa sala não existe ou já foi encerrada.")
                         break
                     }
@@ -1156,22 +1425,47 @@ class GdroidLanVpnService : VpnService() {
 
                 if (!isHostRole && myNodeId > 0) {
                     val hostPeer = peersByNode[TunnelProtocol.HOST_NODE_ID]
-                    if (hostPeer != null && !hostPeer.isAlive(now)) {
-                        failAndStop("A sala foi encerrada pelo anfitrião.")
-                        break
+                    val silenceMs = if (hostPeer != null) (now - hostPeer.lastAnyRxAt) else 0L
+
+                    if (!autoReconnectEnabled) {
+                        if (silenceMs > 38_000L) {
+                            failAndStop("A sala foi encerrada ou a conexão caiu.")
+                            break
+                        }
+                    } else {
+                        if (silenceMs > CLIENT_RECONNECT_MAX_MS) {
+                            failAndStop("Não foi possível reconectar após longo período sem resposta da sala.")
+                            break
+                        }
+                        if (silenceMs >= 8_000L) {
+                            wasReconnectingToastShown = true
+                            // Re-autentica mantendo o mesmo myNodeId (10.10.0.x) sem fechar tun0
+                            if (mqttClientIsOk()) {
+                                sendClientJoinRequest()
+                            } else if (hasPhysicalInternet && tick % 4 == 0) {
+                                mqttClient?.forceReconnectNow()
+                            }
+                            if (silenceMs >= 16_000L && hasPhysicalInternet && tick % 6 == 0) {
+                                triggerSeamlessNetworkHandover(gen)
+                            }
+                        }
                     }
                 }
 
-                if (tick % 8 == 1) {
+                if (tick % 6 == 1) {
                     udpSocket?.let { StunClient.sendBindingRequests(it) }
                 }
 
                 if (isHostRole) {
+                    if (!mqttClientIsOk() && hasPhysicalInternet && autoReconnectEnabled && tick % 4 == 0) {
+                        mqttClient?.forceReconnectNow()
+                    }
+
                     var removedAny = false
                     val it = peersByNode.entries.iterator()
                     while (it.hasNext()) {
                         val e = it.next()
-                        if (!e.value.isAlive(now)) {
+                        if (!e.value.isAlive(now, autoReconnectEnabled)) {
                             sessionToNode.remove(e.value.sessionId)
                             it.remove()
                             removedAny = true
@@ -1193,11 +1487,13 @@ class GdroidLanVpnService : VpnService() {
         }, "gdroid-maint-loop").apply { isDaemon = true }.start()
     }
 
+    private fun mqttClientIsOk(): Boolean = mqttClient?.isConnected() == true
+
     private fun refreshSnapshotUi() {
         if (!sessionRunning.get()) return
         val now = System.currentTimeMillis()
         val mqttOk = mqttClient?.isConnected() == true
-        val alivePeers = peersByNode.values.filter { it.isAlive(now) }
+        val alivePeers = peersByNode.values.filter { it.isAlive(now, autoReconnectEnabled) }
         val anyDirect = alivePeers.any { it.isDirectActive(now) }
         val bestPing = alivePeers.map { it.lastRttMs }.filter { it > 0 }.minOrNull() ?: -1L
 
@@ -1209,7 +1505,17 @@ class GdroidLanVpnService : VpnService() {
 
         if (isHostRole) {
             membersList = buildHostMembersList(now)
-            if (alivePeers.isNotEmpty()) {
+            val hostOscillating = !hasPhysicalInternet || (!mqttOk && !anyDirect)
+
+            if (hostOscillating && autoReconnectEnabled && tunInterface != null) {
+                phase = StatusPhase.RECONNECTING
+                routeLabel = "Reconectando"
+                detail = if (!hasPhysicalInternet) {
+                    "Sem sinal de internet. Aguardando Wi-Fi ou 4G/5G mantendo o servidor em 10.10.0.1..."
+                } else {
+                    "Oscilação de rede detectada. Reconectando servidor automaticamente sem derrubar a sala..."
+                }
+            } else if (alivePeers.isNotEmpty()) {
                 phase = StatusPhase.ONLINE
                 routeLabel = if (anyDirect) "P2P" else "Ponte TLS"
                 detail = "Sala ativa e protegida. No GDroid, todos entram no IP 10.10.0.1."
@@ -1227,42 +1533,25 @@ class GdroidLanVpnService : VpnService() {
                 detail = "Registrando sala segura $activeRoomCode..."
             }
         } else {
-            if (myNodeId > 0 && alivePeers.isNotEmpty()) {
+            val hostPeer = peersByNode[TunnelProtocol.HOST_NODE_ID]
+            val silenceMs = if (hostPeer != null) (now - hostPeer.lastAnyRxAt) else 0L
+            val clientReconnecting = myNodeId > 0 && autoReconnectEnabled &&
+                (!hasPhysicalInternet || silenceMs >= 8_000L || (!mqttOk && !anyDirect))
+
+            if (clientReconnecting) {
+                phase = StatusPhase.RECONNECTING
+                routeLabel = "Reconectando"
+                detail = if (!hasPhysicalInternet) {
+                    "Sem internet no momento. Aguardando Wi-Fi ou 4G/5G mantendo seu IP $myIp..."
+                } else {
+                    "Oscilação de rede detectada. Reconectando automaticamente na sala mantendo $myIp..."
+                }
+                membersList = buildClientMembersList(bestPing, routeLabel, myIp)
+            } else if (myNodeId > 0 && alivePeers.isNotEmpty()) {
                 phase = StatusPhase.ONLINE
                 routeLabel = if (anyDirect) "P2P" else "Ponte TLS"
                 detail = "Conectado na sala de $hostDisplayNameOnClient. Entre no IP 10.10.0.1 no GDroid."
-                membersList = if (remoteRosterCache.isNotEmpty()) {
-                    remoteRosterCache.map { m ->
-                        when {
-                            m.isHost -> m.copy(pingMs = bestPing, routeLabel = routeLabel)
-                            m.nodeId == myNodeId -> m.copy(pingMs = bestPing, routeLabel = "Você")
-                            else -> m
-                        }
-                    }
-                } else {
-                    listOf(
-                        TunnelProtocol.RoomMemberInfo(
-                            nodeId = TunnelProtocol.HOST_NODE_ID,
-                            sessionId = 0L,
-                            accountUid = 0L,
-                            displayName = hostDisplayNameOnClient,
-                            virtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
-                            isHost = true,
-                            pingMs = bestPing,
-                            routeLabel = routeLabel
-                        ),
-                        TunnelProtocol.RoomMemberInfo(
-                            nodeId = myNodeId,
-                            sessionId = clientSessionId,
-                            accountUid = myAccountUid,
-                            displayName = myDisplayName,
-                            virtualIp = myIp,
-                            isHost = false,
-                            pingMs = bestPing,
-                            routeLabel = "Você"
-                        )
-                    )
-                }
+                membersList = buildClientMembersList(bestPing, routeLabel, myIp)
             } else {
                 phase = StatusPhase.CONNECTING
                 routeLabel = "..."
@@ -1299,6 +1588,45 @@ class GdroidLanVpnService : VpnService() {
         )
     }
 
+    private fun buildClientMembersList(
+        bestPing: Long,
+        routeLabel: String,
+        myIp: String
+    ): List<TunnelProtocol.RoomMemberInfo> {
+        return if (remoteRosterCache.isNotEmpty()) {
+            remoteRosterCache.map { m ->
+                when {
+                    m.isHost -> m.copy(pingMs = bestPing, routeLabel = routeLabel)
+                    m.nodeId == myNodeId -> m.copy(pingMs = bestPing, routeLabel = "Você")
+                    else -> m
+                }
+            }
+        } else {
+            listOf(
+                TunnelProtocol.RoomMemberInfo(
+                    nodeId = TunnelProtocol.HOST_NODE_ID,
+                    sessionId = 0L,
+                    accountUid = 0L,
+                    displayName = hostDisplayNameOnClient,
+                    virtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
+                    isHost = true,
+                    pingMs = bestPing,
+                    routeLabel = routeLabel
+                ),
+                TunnelProtocol.RoomMemberInfo(
+                    nodeId = myNodeId,
+                    sessionId = clientSessionId,
+                    accountUid = myAccountUid,
+                    displayName = myDisplayName,
+                    virtualIp = myIp,
+                    isHost = false,
+                    pingMs = bestPing,
+                    routeLabel = "Você"
+                )
+            )
+        }
+    }
+
     private fun failAndStop(errorMsg: String) {
         stopTunnelSession(userRequested = false)
         publishState(
@@ -1316,6 +1644,7 @@ class GdroidLanVpnService : VpnService() {
     private fun stopTunnelSession(userRequested: Boolean) {
         val wasRunning = sessionRunning.getAndSet(false)
         sessionGeneration.incrementAndGet()
+        unregisterPhysicalNetworkMonitor()
 
         if (wasRunning && myNodeId > 0) {
             try {
@@ -1362,6 +1691,7 @@ class GdroidLanVpnService : VpnService() {
                 tunInterface?.close()
             } catch (_: Exception) { }
             tunInterface = null
+            tunBoundNodeId = 0
         }
 
         releaseWakeLockSafe()

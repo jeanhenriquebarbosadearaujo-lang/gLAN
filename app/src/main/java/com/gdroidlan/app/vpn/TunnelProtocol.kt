@@ -62,7 +62,8 @@ object TunnelProtocol {
         val sessionId: Long,
         val accountUid: Long,
         val displayName: String,
-        val clientPubKeyB64: String
+        val clientPubKeyB64: String,
+        val preferredNodeId: Int = 0
     )
 
     data class JoinAckData(
@@ -127,13 +128,17 @@ object TunnelProtocol {
         sessionId: Long,
         accountUid: Long,
         displayName: String,
-        clientPubKeyB64: String
+        clientPubKeyB64: String,
+        preferredNodeId: Int = 0
     ): ByteArray {
         val j = JSONObject().apply {
             put("sid", sessionId)
             put("uid", accountUid)
             put("name", RoomCrypto.cleanSafeText(displayName, 24).ifBlank { "Jogador" })
             put("cpub", clientPubKeyB64)
+            if (preferredNodeId in MIN_CLIENT_NODE_ID..MAX_CLIENT_NODE_ID) {
+                put("prefNode", preferredNodeId)
+            }
             UpdateNotifier.getBuiltInVerifiedRelease()?.let { rel ->
                 put("vCode", rel.versionCode)
                 put("vName", rel.versionName)
@@ -156,11 +161,13 @@ object TunnelProtocol {
                     UpdateNotifier.onVerifiedReleaseObserved(rel, OfficialVersionCert.BUILT_VERSION_CODE)
                 }
             }
+            val prefNode = j.optInt("prefNode", 0)
             JoinRequestData(
                 sessionId = j.getLong("sid"),
                 accountUid = j.optLong("uid", 0L),
                 displayName = RoomCrypto.cleanSafeText(j.optString("name", ""), 24).ifBlank { "Jogador" },
-                clientPubKeyB64 = cpub
+                clientPubKeyB64 = cpub,
+                preferredNodeId = if (prefNode in MIN_CLIENT_NODE_ID..MAX_CLIENT_NODE_ID) prefNode else 0
             )
         } catch (_: Exception) {
             null

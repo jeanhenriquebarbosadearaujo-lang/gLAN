@@ -67,7 +67,7 @@
                             android:fontFamily="monospace"
                             android:paddingHorizontal="6dp"
                             android:paddingVertical="2dp"
-                            android:text="v3.1"
+                            android:text="v3.2"
                             android:textColor="@color/neon_cyan"
                             android:textSize="10sp"
                             android:textStyle="bold" />
@@ -1109,7 +1109,7 @@
                         android:fontFamily="monospace"
                         android:paddingHorizontal="6dp"
                         android:paddingVertical="2dp"
-                        android:text="v3.1"
+                        android:text="v3.2"
                         android:textColor="@color/neon_cyan"
                         android:textSize="10sp"
                         android:textStyle="bold" />
@@ -1243,7 +1243,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="TikTok: .memze • Versão 3.1"
+            android:text="TikTok: .memze • Versão 3.2"
             android:textColor="@color/neon_cyan"
             android:textSize="11sp" />
 
