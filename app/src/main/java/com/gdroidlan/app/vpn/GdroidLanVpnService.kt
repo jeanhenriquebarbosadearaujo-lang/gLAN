@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.gdroidlan.app.MainActivity
 import com.gdroidlan.app.R
+import com.gdroidlan.app.admin.AdminBridge
 import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.net.MqttLightClient
 import com.gdroidlan.app.net.PublicLobbyBrowser
@@ -70,7 +71,9 @@ class GdroidLanVpnService : VpnService() {
         val blockedNames: List<String> = emptyList(),
         val members: List<TunnelProtocol.RoomMemberInfo> = emptyList(),
         val txBytes: Long = 0L,
-        val rxBytes: Long = 0L
+        val rxBytes: Long = 0L,
+        val gamePortOpen: Boolean = false,
+        val mapMode: String = ""
     )
 
     private class PeerNode(
@@ -136,9 +139,11 @@ class GdroidLanVpnService : VpnService() {
         const val EXTRA_ROOM_CODE = "room_code"
         const val EXTRA_PLAYER_NAME = "player_name"
         const val EXTRA_ACCOUNT_UID = "account_uid"
+        const val EXTRA_ACCOUNT_TAG = "account_tag"
         const val EXTRA_MAX_PLAYERS = "max_players"
         const val EXTRA_IS_PUBLIC = "is_public"
         const val EXTRA_ROOM_TITLE = "room_title"
+        const val EXTRA_MAP_MODE = "map_mode"
         const val EXTRA_PROTECT_IP = "protect_ip"
         const val EXTRA_EXPECTED_HOST_PUBKEY = "expected_host_pubkey"
         const val EXTRA_TARGET_NODE_ID = "target_node_id"
@@ -213,13 +218,41 @@ class GdroidLanVpnService : VpnService() {
     @Volatile private var wasReconnectingToastShown = false
     @Volatile private var myDisplayName = "Jogador"
     @Volatile private var myAccountUid = 0L
+    @Volatile private var myAccountTag = ""
     @Volatile private var maxTotalPlayers = TunnelProtocol.MAX_TOTAL_PLAYERS
     @Volatile private var isPublicRoom = false
     @Volatile private var ipProtectionActive = false
     @Volatile private var expectedHostPubKeyFromLobbyB64 = ""
     @Volatile private var publicRoomTitle = ""
+    @Volatile private var activeMapMode = ""
+    @Volatile private var hostGamePortOpen = false
+    @Volatile private var lastHostGamePortTrafficAtMs = 0L
+    @Volatile private var lastNotifSignature = ""
     @Volatile private var hostDisplayNameOnClient = "Anfitrião"
     @Volatile private var remoteRosterCache: List<TunnelProtocol.RoomMemberInfo> = emptyList()
+
+    private val adminStateListener: (AdminBridge.VerifiedAdminState) -> Unit = { _ ->
+        if (sessionRunning.get()) {
+            val banReason = AdminBridge.checkAccountBanReason(myAccountTag)
+            if (banReason != null) {
+                failAndStop("Conta suspensa pela administração: $banReason")
+            } else if (AdminBridge.isRoomRecentlyKilledByAdmin(activeRoomCode)) {
+                failAndStop("Esta sala foi encerrada pela administração do gLAN.")
+            }
+        }
+    }
+
+    private val adminKillListener: (AdminBridge.VerifiedKillCommand) -> Unit = { cmd ->
+        if (sessionRunning.get() && cmd.roomCode == activeRoomCode) {
+            failAndStop(cmd.reason)
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        AdminBridge.addStateListener(adminStateListener)
+        AdminBridge.addKillListener(adminKillListener)
+    }
 
     @Volatile private var myNodeId: Int = 0
     @Volatile private var clientSessionId: Long = rng.nextLong()
@@ -313,6 +346,32 @@ class GdroidLanVpnService : VpnService() {
                     24
                 ).ifBlank { "Jogador" }
                 myAccountUid = intent.getLongExtra(EXTRA_ACCOUNT_UID, 0L)
+                myAccountTag = AdminBridge.normalizeTag(intent.getStringExtra(EXTRA_ACCOUNT_TAG).orEmpty())
+
+                val banReason = AdminBridge.checkAccountBanReason(myAccountTag)
+                if (banReason != null) {
+                    ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    publishState(
+                        TunnelSnapshot(
+                            phase = StatusPhase.ERROR,
+                            statusText = "Conta suspensa pela administração: $banReason"
+                        )
+                    )
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                if (AdminBridge.isRoomRecentlyKilledByAdmin(cleanCode)) {
+                    ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    publishState(
+                        TunnelSnapshot(
+                            phase = StatusPhase.ERROR,
+                            statusText = "Esta sala foi encerrada pela administração do gLAN."
+                        )
+                    )
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+
                 maxTotalPlayers = intent.getIntExtra(EXTRA_MAX_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
                     .coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
                 autoReconnectEnabled = intent.getBooleanExtra(EXTRA_AUTO_RECONNECT, true)
@@ -329,6 +388,11 @@ class GdroidLanVpnService : VpnService() {
                     intent.getStringExtra(EXTRA_ROOM_TITLE).orEmpty(),
                     28
                 )
+                activeMapMode = if (wantHost) {
+                    RoomCrypto.cleanSafeText(intent.getStringExtra(EXTRA_MAP_MODE).orEmpty(), 28)
+                } else {
+                    ""
+                }
                 startTunnelSession(wantHost, cleanCode)
                 return START_STICKY
             }
@@ -343,6 +407,8 @@ class GdroidLanVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        AdminBridge.removeStateListener(adminStateListener)
+        AdminBridge.removeKillListener(adminKillListener)
         stopTunnelSession(userRequested = true)
         super.onDestroy()
     }
@@ -527,6 +593,9 @@ class GdroidLanVpnService : VpnService() {
         blockedAccountUids.clear()
         blockedPlayerNames.clear()
         remoteRosterCache = emptyList()
+        hostGamePortOpen = if (asHost) SourceGameDetector.probeLocalSourceServer() else false
+        lastHostGamePortTrafficAtMs = 0L
+        lastNotifSignature = ""
         txBytesTotal.set(0L)
         rxBytesTotal.set(0L)
         myPublicEndpoint = null
@@ -552,7 +621,9 @@ class GdroidLanVpnService : VpnService() {
                 myVirtualIp = if (asHost) TunnelProtocol.HOST_VIRTUAL_IP else "Negociando...",
                 totalPlayersInRoom = if (asHost) 1 else 0,
                 maxTotalPlayers = maxTotalPlayers,
-                statusText = if (asHost) "Iniciando servidor seguro..." else "Autenticando na sala $roomCode..."
+                statusText = if (asHost) "Iniciando servidor seguro..." else "Autenticando na sala $roomCode...",
+                gamePortOpen = hostGamePortOpen,
+                mapMode = activeMapMode
             )
         )
 
@@ -584,25 +655,40 @@ class GdroidLanVpnService : VpnService() {
                     }
                 }
 
-                val initialTopics = if (asHost) {
-                    listOf("$topicRoot/c2h/ctl", "$topicRoot/c2h/pkt", UpdateNotifier.VERSION_TOPIC)
-                } else {
-                    listOf("$topicRoot/h2c/ctl", UpdateNotifier.VERSION_TOPIC)
+                val initialTopics = ArrayList<String>(6).apply {
+                    if (asHost) {
+                        add("$topicRoot/c2h/ctl")
+                        add("$topicRoot/c2h/pkt")
+                    } else {
+                        add("$topicRoot/h2c/ctl")
+                    }
+                    add(UpdateNotifier.VERSION_TOPIC)
+                    add(AdminBridge.STATE_TOPIC)
+                    add(AdminBridge.CMD_TOPIC)
+                    AdminBridge.replyTopicForTag(myAccountTag)?.let { add(it) }
                 }
 
                 val mqtt = MqttLightClient(
                     socketProtector = { sock -> protect(sock) },
                     onPacketReceived = { topic, encrypted ->
                         if (sessionGeneration.get() == gen && sessionRunning.get()) {
-                            if (topic == UpdateNotifier.VERSION_TOPIC) {
-                                UpdateNotifier.parseEncryptedAnnouncement(encrypted)?.let { rel ->
-                                    UpdateNotifier.onVerifiedReleaseObserved(
-                                        rel,
-                                        OfficialVersionCert.BUILT_VERSION_CODE
-                                    )
+                            when {
+                                topic == UpdateNotifier.VERSION_TOPIC -> {
+                                    UpdateNotifier.parseEncryptedAnnouncement(encrypted)?.let { rel ->
+                                        UpdateNotifier.onVerifiedReleaseObserved(
+                                            rel,
+                                            OfficialVersionCert.BUILT_VERSION_CODE
+                                        )
+                                    }
                                 }
-                            } else {
-                                handleEncryptedNetworkPacket(encrypted, viaUdpFrom = null)
+                                topic == AdminBridge.STATE_TOPIC ||
+                                    topic == AdminBridge.CMD_TOPIC ||
+                                    topic.startsWith("glan/v36/admin/reply/") -> {
+                                    AdminBridge.onAdminPacketReceived(topic, encrypted)
+                                }
+                                else -> {
+                                    handleEncryptedNetworkPacket(encrypted, viaUdpFrom = null)
+                                }
                             }
                         }
                     },
@@ -781,7 +867,15 @@ class GdroidLanVpnService : VpnService() {
         if (!isHostRole || !sessionRunning.get()) return
         val identity = sessionIdentity ?: return
         val members = buildHostMembersList()
-        val enc = roomCipher?.encrypt(TunnelProtocol.buildRoster(identity, maxTotalPlayers, members)) ?: return
+        val enc = roomCipher?.encrypt(
+            TunnelProtocol.buildRoster(
+                hostIdentity = identity,
+                maxPlayers = maxTotalPlayers,
+                members = members,
+                gamePortOpen = hostGamePortOpen,
+                mapMode = activeMapMode
+            )
+        ) ?: return
         mqttClient?.publish("$topicRoot/h2c/ctl", enc)
         if (isPublicRoom) {
             publishPublicLobbyBeacon(currentCount = members.size)
@@ -804,7 +898,9 @@ class GdroidLanVpnService : VpnService() {
             hostName = myDisplayName,
             currentPlayers = count,
             maxPlayers = maxTotalPlayers,
-            ipProtected = ipProtectionActive
+            ipProtected = ipProtectionActive,
+            gamePortOpen = hostGamePortOpen,
+            mapMode = activeMapMode
         )
         mqttClient?.publish(PublicLobbyBrowser.LOBBY_TOPIC, beacon)
     }
@@ -838,6 +934,15 @@ class GdroidLanVpnService : VpnService() {
 
                     val dstNode = TunnelProtocol.inspectOutgoingIpv4Target(buf, n, sender)
                     if (dstNode < 0 || dstNode == sender) continue
+
+                    if (isHostRole && TunnelProtocol.isOutgoingFromHostGamePort(buf, n)) {
+                        lastHostGamePortTrafficAtMs = System.currentTimeMillis()
+                        if (!hostGamePortOpen) {
+                            hostGamePortOpen = true
+                            broadcastRosterFromHost()
+                            refreshSnapshotUi()
+                        }
+                    }
 
                     val plainFrame = TunnelProtocol.buildIpv4Frame(sender, dstNode, buf, n)
                     txBytesTotal.addAndGet(n.toLong())
@@ -1142,10 +1247,18 @@ class GdroidLanVpnService : VpnService() {
                 if (isHostRole || myNodeId == 0) return
                 val hostPub = pinnedHostPubKey ?: return
                 val roster = TunnelProtocol.parseRoster(plain, expectedHostKey = hostPub) ?: return
+                val wasGameOpen = hostGamePortOpen
                 maxTotalPlayers = roster.maxPlayers
                 remoteRosterCache = roster.members
+                hostGamePortOpen = roster.gamePortOpen
+                activeMapMode = roster.mapMode
                 peersByNode[TunnelProtocol.HOST_NODE_ID]?.lastAnyRxAt = now
                 refreshSnapshotUi()
+                if (!wasGameOpen && roster.gamePortOpen) {
+                    onModerationEventToast?.invoke(
+                        "Partida aberta no GDroid! Use ${TunnelProtocol.HOST_CONNECT_CMD}"
+                    )
+                }
             }
 
             TunnelProtocol.TYPE_BYE -> {
@@ -1526,6 +1639,16 @@ class GdroidLanVpnService : VpnService() {
                         mqttClient?.forceReconnectNow()
                     }
 
+                    val localGameOpen = SourceGameDetector.probeLocalSourceServer() ||
+                        (now - lastHostGamePortTrafficAtMs < 12_000L)
+                    val gameOpenChanged = (localGameOpen != hostGamePortOpen)
+                    if (gameOpenChanged) {
+                        hostGamePortOpen = localGameOpen
+                        if (localGameOpen) {
+                            onModerationEventToast?.invoke("Partida detectada no GDroid (porta 27015 ativa).")
+                        }
+                    }
+
                     var removedAny = false
                     val it = peersByNode.entries.iterator()
                     while (it.hasNext()) {
@@ -1536,7 +1659,7 @@ class GdroidLanVpnService : VpnService() {
                             removedAny = true
                         }
                     }
-                    if (removedAny || tick % 2 == 0) {
+                    if (gameOpenChanged || removedAny || tick % 2 == 0) {
                         broadcastRosterFromHost()
                     } else if (isPublicRoom) {
                         publishPublicLobbyBeacon()
@@ -1649,29 +1772,31 @@ class GdroidLanVpnService : VpnService() {
         val blockedNamesSorted = blockedPlayerNames.values.sorted()
         val totalBlocked = maxOf(blockedSessions.size, blockedNamesSorted.size)
 
-        publishState(
-            TunnelSnapshot(
-                phase = phase,
-                isHost = isHostRole,
-                isPublicRoom = isPublicRoom,
-                ipProtected = ipProtectionActive,
-                publicRoomTitle = publicRoomTitle,
-                roomCode = activeRoomCode,
-                myNodeId = myNodeId,
-                myVirtualIp = myIp,
-                hostVirtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
-                statusText = detail,
-                routeMode = routeLabel,
-                pingMs = bestPing,
-                totalPlayersInRoom = totalInRoom,
-                maxTotalPlayers = maxTotalPlayers,
-                blockedCount = totalBlocked,
-                blockedNames = blockedNamesSorted,
-                members = membersList,
-                txBytes = txBytesTotal.get(),
-                rxBytes = rxBytesTotal.get()
-            )
+        val snap = TunnelSnapshot(
+            phase = phase,
+            isHost = isHostRole,
+            isPublicRoom = isPublicRoom,
+            ipProtected = ipProtectionActive,
+            publicRoomTitle = publicRoomTitle,
+            roomCode = activeRoomCode,
+            myNodeId = myNodeId,
+            myVirtualIp = myIp,
+            hostVirtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
+            statusText = detail,
+            routeMode = routeLabel,
+            pingMs = bestPing,
+            totalPlayersInRoom = totalInRoom,
+            maxTotalPlayers = maxTotalPlayers,
+            blockedCount = totalBlocked,
+            blockedNames = blockedNamesSorted,
+            members = membersList,
+            txBytes = txBytesTotal.get(),
+            rxBytes = rxBytesTotal.get(),
+            gamePortOpen = hostGamePortOpen,
+            mapMode = activeMapMode
         )
+        publishState(snap)
+        updateLiveNotification(snap)
     }
 
     private fun buildClientMembersList(
@@ -1794,8 +1919,7 @@ class GdroidLanVpnService : VpnService() {
     // NOTIFICAÇÃO E WAKELOCK
     // =========================================================================
 
-    private fun startForegroundSafe(contentText: String) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private fun ensureNotificationChannel(nm: NotificationManager) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -1806,11 +1930,28 @@ class GdroidLanVpnService : VpnService() {
             }
             nm.createNotificationChannel(channel)
         }
+    }
 
+    private fun buildRichNotification(
+        titleText: String,
+        shortText: String,
+        expandedText: String,
+        stopLabel: String
+    ): Notification {
         val openIntent = PendingIntent.getActivity(
             this,
             10,
             Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val copyIntent = PendingIntent.getBroadcast(
+            this,
+            12,
+            Intent(this, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_COPY_CONNECT
+                putExtra(EXTRA_CALLER_TOKEN, INTERNAL_CALLER_TOKEN)
+                putExtra(NotificationActionReceiver.EXTRA_CONNECT_CMD, TunnelProtocol.HOST_CONNECT_CMD)
+            },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val stopIntent = PendingIntent.getService(
@@ -1823,14 +1964,31 @@ class GdroidLanVpnService : VpnService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val notif: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_vpn)
-            .setContentTitle("gLAN Ativo")
-            .setContentText(contentText)
+            .setContentTitle(titleText)
+            .setContentText(shortText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(expandedText))
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(openIntent)
-            .addAction(0, "Desconectar", stopIntent)
+            .addAction(0, "Copiar connect", copyIntent)
+            .addAction(0, stopLabel, stopIntent)
             .build()
+    }
+
+    private fun startForegroundSafe(contentText: String) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        ensureNotificationChannel(nm)
+
+        val stopLabel = if (isHostRole) "Encerrar" else "Sair da Sala"
+        val notif = buildRichNotification(
+            titleText = "gLAN Ativo",
+            shortText = contentText,
+            expandedText = "$contentText\nConsole GDroid: ${TunnelProtocol.HOST_CONNECT_CMD}",
+            stopLabel = stopLabel
+        )
+        lastNotifSignature = "init|$contentText|$stopLabel"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ServiceCompat.startForeground(
@@ -1842,6 +2000,33 @@ class GdroidLanVpnService : VpnService() {
         } else {
             ServiceCompat.startForeground(this, NOTIF_ID, notif, 0)
         }
+    }
+
+    private fun updateLiveNotification(snap: TunnelSnapshot) {
+        if (!sessionRunning.get()) return
+        val roleTitle = if (snap.isHost) "Servidor" else "Sala"
+        val title = "gLAN • $roleTitle ${snap.roomCode} (${snap.totalPlayersInRoom}/${snap.maxTotalPlayers})"
+        val gamePart = if (snap.gamePortOpen) "Partida aberta" else "Aguardando mapa"
+        val pingPart = when {
+            snap.phase == StatusPhase.RECONNECTING -> "Reconectando"
+            snap.pingMs > 0L -> "${snap.pingMs} ms"
+            else -> snap.routeMode
+        }
+        val mapPart = if (snap.mapMode.isNotBlank()) " • ${snap.mapMode}" else ""
+        val shortText = "$gamePart$mapPart • $pingPart"
+        val expandedText = "$shortText\nMeu IP: ${snap.myVirtualIp} • Console: ${TunnelProtocol.HOST_CONNECT_CMD}"
+        val stopLabel = if (snap.isHost) "Encerrar" else "Sair da Sala"
+
+        val sig = "$title|$shortText|$expandedText|$stopLabel"
+        if (sig == lastNotifSignature) return
+        lastNotifSignature = sig
+
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            ensureNotificationChannel(nm)
+            val notif = buildRichNotification(title, shortText, expandedText, stopLabel)
+            nm.notify(NOTIF_ID, notif)
+        } catch (_: Exception) { }
     }
 
     private fun acquireWakeLockSafe() {

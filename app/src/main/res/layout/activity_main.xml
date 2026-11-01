@@ -83,7 +83,7 @@
                             android:fontFamily="monospace"
                             android:paddingHorizontal="7dp"
                             android:paddingVertical="2dp"
-                            android:text="v3.5"
+                            android:text="v3.6"
                             android:textColor="@color/neon_cyan"
                             android:textSize="10sp"
                             android:textStyle="bold" />
@@ -182,6 +182,47 @@
                         android:layout_marginTop="4dp"
                         android:lineSpacingExtra="2dp"
                         android:text="Uma nova versão oficial do gLAN está disponível. Atualize para manter compatibilidade total nas salas."
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- COMUNICADO OFICIAL DA ADMINISTRAÇÃO (ASSINADO DIGITALMENTE) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardAvisoAdmin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="#1638BDF8"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="#4D38BDF8"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp">
+
+                    <TextView
+                        android:id="@+id/txtTituloAvisoAdmin"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.06"
+                        android:text="COMUNICADO OFICIAL"
+                        android:textColor="@color/neon_cyan"
+                        android:textSize="10.5sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txtCorpoAvisoAdmin"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="2dp"
                         android:textColor="@color/text_primary"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -590,6 +631,25 @@
                             android:textSize="14sp" />
                     </com.google.android.material.textfield.TextInputLayout>
 
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/layoutMapaModoHost"
+                        style="@style/Widget.GDroidLAN.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="Mapa ou Modo (opcional, ex: gm_construct • Sandbox)">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edtMapaModoHost"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textCapSentences"
+                            android:maxLength="28"
+                            android:singleLine="true"
+                            android:textColor="@color/text_primary"
+                            android:textSize="13.5sp" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
                     <TextView
                         android:id="@+id/txtInfoProtecaoIpPublica"
                         android:layout_width="match_parent"
@@ -817,58 +877,97 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="@drawable/bg_code_vault"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
+                        android:orientation="vertical"
                         android:paddingHorizontal="14dp"
                         android:paddingVertical="12dp">
 
                         <LinearLayout
-                            android:layout_width="0dp"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
 
-                            <TextView
-                                android:layout_width="wrap_content"
+                            <LinearLayout
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:text="IP do Servidor no GDroid"
-                                android:textColor="@color/text_secondary"
-                                android:textSize="11sp" />
+                                android:layout_weight="1"
+                                android:orientation="vertical">
 
-                            <TextView
-                                android:id="@+id/txtIpParaAmigos"
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="IP do Servidor no GDroid"
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="11sp" />
+
+                                <TextView
+                                    android:id="@+id/txtIpParaAmigos"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:fontFamily="monospace"
+                                    android:text="10.10.0.1"
+                                    android:textColor="@color/neon_cyan"
+                                    android:textSize="17sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCopiarIpHost"
+                                style="?attr/materialButtonOutlinedStyle"
                                 android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:fontFamily="monospace"
-                                android:text="10.10.0.1"
+                                android:layout_height="36dp"
+                                android:layout_marginEnd="6dp"
+                                android:fontFamily="sans-serif-medium"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:letterSpacing="0"
+                                android:minWidth="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="IP"
+                                android:textAllCaps="false"
+                                android:textColor="@color/text_primary"
+                                android:textSize="11.5sp"
+                                app:backgroundTint="@color/surface_elevated"
+                                app:cornerRadius="9dp"
+                                app:icon="@drawable/ic_copy"
+                                app:iconPadding="4dp"
+                                app:iconSize="13dp"
+                                app:iconTint="@color/text_secondary"
+                                app:strokeColor="@color/stroke_elevated" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCopiarConnectHost"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:fontFamily="sans-serif-medium"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:letterSpacing="0"
+                                android:minWidth="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="Console"
+                                android:textAllCaps="false"
                                 android:textColor="@color/neon_cyan"
-                                android:textSize="17sp"
-                                android:textStyle="bold" />
+                                android:textSize="11.5sp"
+                                app:backgroundTint="#1438BDF8"
+                                app:cornerRadius="9dp"
+                                app:icon="@drawable/ic_terminal"
+                                app:iconPadding="4dp"
+                                app:iconSize="14dp"
+                                app:iconTint="@color/neon_cyan"
+                                app:strokeColor="#3338BDF8" />
                         </LinearLayout>
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnCopiarIpHost"
-                            style="?attr/materialButtonOutlinedStyle"
-                            android:layout_width="wrap_content"
-                            android:layout_height="38dp"
-                            android:fontFamily="sans-serif-medium"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:letterSpacing="0"
-                            android:minWidth="0dp"
-                            android:paddingHorizontal="12dp"
-                            android:text="Copiar IP"
-                            android:textAllCaps="false"
-                            android:textColor="@color/neon_cyan"
-                            android:textSize="12sp"
-                            app:backgroundTint="#1438BDF8"
-                            app:cornerRadius="10dp"
-                            app:icon="@drawable/ic_copy"
-                            app:iconPadding="5dp"
-                            app:iconSize="14dp"
-                            app:iconTint="@color/neon_cyan"
-                            app:strokeColor="#3338BDF8" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:fontFamily="monospace"
+                            android:text="Console GDroid: connect 10.10.0.1:27015"
+                            android:textColor="@color/text_tertiary"
+                            android:textSize="10.5sp" />
                     </LinearLayout>
 
                 </LinearLayout>
@@ -890,54 +989,80 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
+                    android:orientation="vertical"
                     android:padding="18dp">
 
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:letterSpacing="0.08"
-                            android:text="IP PARA ENTRAR NO GDROID"
-                            android:textColor="@color/neon_cyan"
-                            android:textSize="10.5sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/txtIpHostParaCliente"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:fontFamily="monospace"
-                            android:text="10.10.0.1"
-                            android:textColor="@color/text_primary"
-                            android:textSize="23sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnCopiarIpParaJogo"
+                    <TextView
                         android:layout_width="wrap_content"
-                        android:layout_height="44dp"
-                        android:fontFamily="sans-serif-medium"
-                        android:letterSpacing="0"
-                        android:paddingHorizontal="16dp"
-                        android:text="Copiar IP"
-                        android:textAllCaps="false"
-                        android:textColor="#FFFFFF"
-                        android:textSize="13sp"
-                        app:backgroundTint="@color/neon_emerald"
-                        app:cornerRadius="12dp"
-                        app:icon="@drawable/ic_copy"
-                        app:iconPadding="6dp"
-                        app:iconSize="15dp"
-                        app:iconTint="#FFFFFF" />
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.08"
+                        android:text="CONECTAR NO GDROID"
+                        android:textColor="@color/neon_cyan"
+                        android:textSize="10.5sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txtIpHostParaCliente"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:fontFamily="monospace"
+                        android:text="connect 10.10.0.1:27015"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCopiarConnectCliente"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1.25"
+                            android:fontFamily="sans-serif-medium"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:letterSpacing="0"
+                            android:text="Copiar connect"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12.5sp"
+                            app:backgroundTint="@color/neon_emerald"
+                            app:cornerRadius="11dp"
+                            app:icon="@drawable/ic_terminal"
+                            app:iconGravity="textStart"
+                            app:iconPadding="6dp"
+                            app:iconSize="15dp"
+                            app:iconTint="#FFFFFF" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCopiarIpParaJogo"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="0.9"
+                            android:fontFamily="sans-serif-medium"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:letterSpacing="0"
+                            android:text="Só IP"
+                            android:textAllCaps="false"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12.5sp"
+                            app:backgroundTint="@color/surface_elevated"
+                            app:cornerRadius="11dp"
+                            app:icon="@drawable/ic_copy"
+                            app:iconGravity="textStart"
+                            app:iconPadding="5dp"
+                            app:iconSize="14dp"
+                            app:iconTint="@color/text_secondary"
+                            app:strokeColor="@color/stroke_elevated" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -967,7 +1092,7 @@
                 android:textSize="12.5sp"
                 android:visibility="gone" />
 
-            <!-- PAINEL DE SESSÃO ATIVA (JOGADORES + TELEMETRIA DE REDE) -->
+            <!-- PAINEL DE SESSÃO ATIVA (STATUS DO JOGO + JOGADORES + TELEMETRIA DE REDE) -->
             <LinearLayout
                 android:id="@+id/painelSessaoAtiva"
                 android:layout_width="match_parent"
@@ -975,10 +1100,55 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <com.google.android.material.card.MaterialCardView
+                <!-- DETECTOR AUTOMÁTICO DE PARTIDA ABERTA NO GDROID (PORTA 27015) -->
+                <LinearLayout
+                    android:id="@+id/boxStatusJogoGdroid"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="14dp"
+                    android:background="@drawable/bg_item_surface"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="12dp">
+
+                    <View
+                        android:id="@+id/viewDotJogoGdroid"
+                        android:layout_width="9dp"
+                        android:layout_height="9dp"
+                        android:background="@drawable/bg_status_dot" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="11dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/txtStatusJogoGdroid"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="Aguardando o Host iniciar o mapa no GDroid"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12.5sp" />
+
+                        <TextView
+                            android:id="@+id/txtMapaAtivoSessao"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Detector automático Source Engine (UDP 27015)"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
                     app:cardBackgroundColor="@color/surface_card"
                     app:cardCornerRadius="20dp"
                     app:cardElevation="0dp"
@@ -1239,7 +1409,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:lineSpacingExtra="4dp"
-                        android:text="1. Entre em um dos Servidores Públicos, use um código em Entrar na Sala ou abra sua sala em Criar Servidor.\n2. Assim que conectar, toque em Copiar IP (10.10.0.1).\n3. Abra o GDroid e entre na partida usando o endereço 10.10.0.1."
+                        android:text="1. Entre em um dos Servidores Públicos, use um código em Entrar na Sala ou abra sua sala em Criar Servidor.\n2. Assim que a partida abrir, toque em Copiar connect (ou direto pela notificação).\n3. No console do GDroid, cole connect 10.10.0.1:27015 (ou conecte pelo IP 10.10.0.1)."
                         android:textColor="@color/text_secondary"
                         android:textSize="12.5sp" />
                 </LinearLayout>
@@ -1320,7 +1490,7 @@
                         android:fontFamily="monospace"
                         android:paddingHorizontal="6dp"
                         android:paddingVertical="2dp"
-                        android:text="v3.4"
+                        android:text="v3.6"
                         android:textColor="@color/neon_cyan"
                         android:textSize="10sp"
                         android:textStyle="bold" />
@@ -1393,6 +1563,28 @@
             app:iconPadding="14dp"
             app:iconSize="19dp"
             app:iconTint="@color/text_secondary" />
+
+        <!-- OPÇÃO 3: ENVIAR FEEDBACK -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnMenuFeedback"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="start|center_vertical"
+            android:letterSpacing="0"
+            android:paddingHorizontal="12dp"
+            android:text="Enviar Feedback"
+            android:textAllCaps="false"
+            android:textColor="@color/status_online"
+            android:textSize="14sp"
+            app:cornerRadius="12dp"
+            app:icon="@drawable/ic_feedback"
+            app:iconGravity="textStart"
+            app:iconPadding="14dp"
+            app:iconSize="19dp"
+            app:iconTint="@color/status_online" />
 
         <View
             android:layout_width="match_parent"
@@ -1498,7 +1690,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="TikTok: .memze • Versão 3.5"
+            android:text="TikTok: .memze • Versão 3.6"
             android:textColor="@color/neon_cyan"
             android:textSize="11.5sp" />
 

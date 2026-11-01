@@ -1,6 +1,7 @@
 package com.gdroidlan.app.net
 
 import android.os.SystemClock
+import com.gdroidlan.app.admin.AdminBridge
 import com.gdroidlan.app.auth.NameModerationFilter
 import com.gdroidlan.app.auth.NameRegistry
 import com.gdroidlan.app.crypto.RoomCrypto
@@ -39,7 +40,9 @@ class PublicLobbyBrowser(
         val ownerPubKeyB64: String,
         val lastSeenAtMs: Long,
         val pingMs: Long = -1L,
-        val ipProtected: Boolean = false
+        val ipProtected: Boolean = false,
+        val gamePortOpen: Boolean = false,
+        val mapMode: String = ""
     ) {
         val isFull: Boolean get() = currentPlayers >= maxPlayers
     }
@@ -80,6 +83,21 @@ class PublicLobbyBrowser(
         ): ByteArray = "v33|open|$code|$title|$host|$cur|$max|$ts|${if (ipProtected) 1 else 0}"
             .toByteArray(Charsets.UTF_8)
 
+        private fun canonicalOpenSignDataV36(
+            code: String,
+            title: String,
+            host: String,
+            cur: Int,
+            max: Int,
+            ts: Long,
+            ipProtected: Boolean,
+            gamePortOpen: Boolean,
+            mapMode: String
+        ): ByteArray = (
+            "v36|open|$code|$title|$host|$cur|$max|$ts|" +
+                "${if (ipProtected) 1 else 0}|${if (gamePortOpen) 1 else 0}|$mapMode"
+            ).toByteArray(Charsets.UTF_8)
+
         private fun canonicalCloseSignData(code: String, ts: Long): ByteArray =
             "v26|close|$code|$ts".toByteArray(Charsets.UTF_8)
 
@@ -90,17 +108,23 @@ class PublicLobbyBrowser(
             hostName: String,
             currentPlayers: Int,
             maxPlayers: Int,
-            ipProtected: Boolean = true
+            ipProtected: Boolean = true,
+            gamePortOpen: Boolean = false,
+            mapMode: String = ""
         ): ByteArray {
             val cleanCode = RoomCrypto.normalizeRoomCode(roomCode)
             val cleanHost = RoomCrypto.cleanSafeText(hostName, 24).ifBlank { "Anfitrião" }
             val cleanTitle = RoomCrypto.cleanSafeText(roomTitle, 28).ifBlank { "Sala de $cleanHost" }
+            val cleanMap = RoomCrypto.cleanSafeText(mapMode, 28)
             val max = maxPlayers.coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
             val cur = currentPlayers.coerceIn(1, max)
             val ts = System.currentTimeMillis()
             val sig = identity.signToBase64(canonicalOpenSignData(cleanCode, cleanTitle, cleanHost, cur, max, ts))
             val sig33 = identity.signToBase64(
                 canonicalOpenSignDataV33(cleanCode, cleanTitle, cleanHost, cur, max, ts, ipProtected)
+            )
+            val sig36 = identity.signToBase64(
+                canonicalOpenSignDataV36(cleanCode, cleanTitle, cleanHost, cur, max, ts, ipProtected, gamePortOpen, cleanMap)
             )
 
             val json = JSONObject().apply {
@@ -115,6 +139,9 @@ class PublicLobbyBrowser(
                 put("sig", sig)
                 put("ipProt", ipProtected)
                 put("sig33", sig33)
+                put("gOpen", gamePortOpen)
+                put("map", cleanMap)
+                put("sig36", sig36)
                 UpdateNotifier.getBuiltInVerifiedRelease()?.let { rel ->
                     put("vCode", rel.versionCode)
                     put("vName", rel.versionName)
@@ -151,7 +178,19 @@ class PublicLobbyBrowser(
     @Volatile private var mqtt: MqttLightClient? = null
     @Volatile private var brokerConnected = false
     @Volatile private var autoPingEnabled = true
+    @Volatile private var activeAccountTag: String = ""
     private val nameClaimSyncedOnce = AtomicBoolean(false)
+
+    fun setActiveAccountTag(accountTag: String?) {
+        val clean = AdminBridge.normalizeTag(accountTag.orEmpty())
+        val prev = activeAccountTag
+        activeAccountTag = clean
+        val client = mqtt ?: return
+        if (prev != clean && prev.isNotBlank()) {
+            AdminBridge.replyTopicForTag(prev)?.let { client.unsubscribe(it) }
+        }
+        AdminBridge.replyTopicForTag(clean)?.let { client.subscribe(it) }
+    }
 
     fun syncMyActiveNameIfNeeded(displayName: String, accountUid: Long) {
         if (accountUid == 0L || !nameClaimSyncedOnce.compareAndSet(false, true)) return
@@ -314,12 +353,18 @@ class PublicLobbyBrowser(
         val client = MqttLightClient(
             socketProtector = { true },
             onPacketReceived = { topic, encrypted ->
-                when (topic) {
-                    LOBBY_TOPIC -> handleIncomingBeacon(encrypted)
-                    UpdateNotifier.VERSION_TOPIC -> {
+                when {
+                    topic == LOBBY_TOPIC -> handleIncomingBeacon(encrypted)
+                    topic == UpdateNotifier.VERSION_TOPIC -> {
                         UpdateNotifier.parseEncryptedAnnouncement(encrypted)?.let { rel ->
                             UpdateNotifier.onVerifiedReleaseObserved(rel, installedVersionCode)
                         }
+                    }
+                    topic == AdminBridge.STATE_TOPIC ||
+                        topic == AdminBridge.CMD_TOPIC ||
+                        topic.startsWith("glan/v36/admin/reply/") -> {
+                        AdminBridge.onAdminPacketReceived(topic, encrypted)
+                        pruneStaleRoomsAndDispatch(forceDispatch = false)
                     }
                     else -> {
                         val listeners = topicListeners[topic]
@@ -342,7 +387,14 @@ class PublicLobbyBrowser(
             }
         )
         mqtt = client
-        client.start(listOf(LOBBY_TOPIC, UpdateNotifier.VERSION_TOPIC))
+        val initTopics = ArrayList<String>(5).apply {
+            add(LOBBY_TOPIC)
+            add(UpdateNotifier.VERSION_TOPIC)
+            add(AdminBridge.STATE_TOPIC)
+            add(AdminBridge.CMD_TOPIC)
+            AdminBridge.replyTopicForTag(activeAccountTag)?.let { add(it) }
+        }
+        client.start(initTopics)
 
         Thread({
             while (active.get()) {
@@ -613,7 +665,9 @@ class PublicLobbyBrowser(
         val it = roomsMap.entries.iterator()
         while (it.hasNext()) {
             val entry = it.next()
-            if (now - entry.value.lastSeenAtMs > STALE_TIMEOUT_MS) {
+            if (now - entry.value.lastSeenAtMs > STALE_TIMEOUT_MS ||
+                AdminBridge.isRoomRecentlyKilledByAdmin(entry.key, now)
+            ) {
                 pingCacheByCode.remove(entry.key)
                 lastPingedAtByCode.remove(entry.key)
                 it.remove()
@@ -649,6 +703,10 @@ class PublicLobbyBrowser(
             val j = JSONObject(String(plain, Charsets.UTF_8))
             val code = RoomCrypto.normalizeRoomCode(j.optString("code", ""))
             if (code.length < 4 || code.length > 12) return
+            if (AdminBridge.isRoomRecentlyKilledByAdmin(code, now)) {
+                removeRoomImmediately(code)
+                return
+            }
 
             val ts = j.optLong("ts", 0L)
             if (ts <= 0L || abs(now - ts) > MAX_CLOCK_SKEW_MS) return
@@ -704,6 +762,15 @@ class PublicLobbyBrowser(
                 sig33B64
             ) && rawIpProt
 
+            val rawGameOpen = j.optBoolean("gOpen", false)
+            val rawMap = RoomCrypto.cleanSafeText(j.optString("map", ""), 28)
+            val sig36B64 = j.optString("sig36", "")
+            val verifiedV36 = sig36B64.isNotBlank() && RoomCrypto.verifySignature(
+                pubKey,
+                canonicalOpenSignDataV36(code, title, host, cur, max, ts, rawIpProt, rawGameOpen, rawMap),
+                sig36B64
+            )
+
             val cachedPing = if (autoPingEnabled) (pingCacheByCode[code] ?: existing?.pingMs ?: -1L) else -1L
             roomsMap[code] = PublicRoomEntry(
                 roomCode = code,
@@ -714,7 +781,9 @@ class PublicLobbyBrowser(
                 ownerPubKeyB64 = pubB64,
                 lastSeenAtMs = now,
                 pingMs = cachedPing,
-                ipProtected = verifiedIpProt
+                ipProtected = verifiedIpProt,
+                gamePortOpen = if (verifiedV36) rawGameOpen else false,
+                mapMode = if (verifiedV36) rawMap else ""
             )
             dispatchSnapshot()
         } catch (_: Exception) { }

@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="20dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="18dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:lineSpacingExtra="2dp"
+        android:text="Envie uma sugestão, relate um bug ou peça suporte diretamente ao desenvolvedor. A mensagem é protegida com criptografia ponta a ponta."
+        android:textColor="@color/text_secondary"
+        android:textSize="12.5sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:letterSpacing="0.06"
+        android:text="CATEGORIA"
+        android:textColor="@color/text_tertiary"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:id="@+id/grupoCategoriaFeedback"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_segmented_track"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="4dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCatBug"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_marginEnd="2dp"
+            android:layout_weight="1"
+            android:fontFamily="sans-serif-medium"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:letterSpacing="0"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:text="Bug"
+            android:textAllCaps="false"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            app:cornerRadius="9dp"
+            app:strokeWidth="0dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCatSugestao"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_marginHorizontal="2dp"
+            android:layout_weight="1"
+            android:fontFamily="sans-serif-medium"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:letterSpacing="0"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:text="Sugestão"
+            android:textAllCaps="false"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            app:cornerRadius="9dp"
+            app:strokeWidth="0dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCatDenuncia"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_marginStart="2dp"
+            android:layout_weight="1"
+            android:fontFamily="sans-serif-medium"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:letterSpacing="0"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:text="Denúncia"
+            android:textAllCaps="false"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            app:cornerRadius="9dp"
+            app:strokeWidth="0dp" />
+    </LinearLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/layoutMensagemFeedback"
+        style="@style/Widget.GDroidLAN.TextInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:hint="Descreva sua mensagem (máx. 600 caracteres)"
+        app:counterEnabled="true"
+        app:counterMaxLength="600">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/edtMensagemFeedback"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="top|start"
+            android:inputType="textCapSentences|textMultiLine"
+            android:maxLength="600"
+            android:maxLines="6"
+            android:minLines="4"
+            android:textColor="@color/text_primary"
+            android:textSize="13.5sp" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <TextView
+        android:id="@+id/txtStatusFeedback"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="@color/neon_cyan"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCancelarFeedback"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginEnd="8dp"
+            android:letterSpacing="0"
+            android:text="Cancelar"
+            android:textAllCaps="false"
+            android:textColor="@color/text_secondary"
+            app:cornerRadius="10dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEnviarFeedbackAgora"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0"
+            android:paddingHorizontal="18dp"
+            android:text="Enviar"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            app:backgroundTint="@color/neon_emerald"
+            app:cornerRadius="10dp" />
+    </LinearLayout>
+
+</LinearLayout>

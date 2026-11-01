@@ -21,6 +21,8 @@ object TunnelProtocol {
     const val MAX_TOTAL_PLAYERS = 8
     const val BROADCAST_NODE_ID = 255
     const val HOST_VIRTUAL_IP = "10.10.0.1"
+    const val SOURCE_GAME_PORT = 27015
+    const val HOST_CONNECT_CMD = "connect 10.10.0.1:27015"
     const val VPN_MTU = 1360
 
     const val TYPE_JOIN_REQ: Byte = 0x01
@@ -84,7 +86,9 @@ object TunnelProtocol {
 
     data class RosterPayload(
         val maxPlayers: Int,
-        val members: List<RoomMemberInfo>
+        val members: List<RoomMemberInfo>,
+        val gamePortOpen: Boolean = false,
+        val mapMode: String = ""
     )
 
     data class ProbeReqData(
@@ -112,6 +116,15 @@ object TunnelProtocol {
 
     private fun rosterSignPayload(maxPlayers: Int, ts: Long, arrJson: String): ByteArray =
         "v26|roster|$maxPlayers|$ts|$arrJson".toByteArray(Charsets.UTF_8)
+
+    private fun rosterSignPayloadV36(
+        maxPlayers: Int,
+        ts: Long,
+        arrJson: String,
+        gamePortOpen: Boolean,
+        mapMode: String
+    ): ByteArray = "v36|roster|$maxPlayers|$ts|$arrJson|${if (gamePortOpen) 1 else 0}|$mapMode"
+        .toByteArray(Charsets.UTF_8)
 
     private fun hostByeSignPayload(ts: Long): ByteArray =
         "v26|hostbye|$ts".toByteArray(Charsets.UTF_8)
@@ -346,7 +359,9 @@ object TunnelProtocol {
     fun buildRoster(
         hostIdentity: RoomCrypto.IdentityKeyBox,
         maxPlayers: Int,
-        members: List<RoomMemberInfo>
+        members: List<RoomMemberInfo>,
+        gamePortOpen: Boolean = false,
+        mapMode: String = ""
     ): ByteArray {
         val arr = JSONArray()
         for (m in members) {
@@ -361,9 +376,11 @@ object TunnelProtocol {
             )
         }
         val max = maxPlayers.coerceIn(MIN_TOTAL_PLAYERS, MAX_TOTAL_PLAYERS)
+        val cleanMap = RoomCrypto.cleanSafeText(mapMode, 28)
         val ts = System.currentTimeMillis()
         val arrStr = arr.toString()
         val sig = hostIdentity.signToBase64(rosterSignPayload(max, ts, arrStr))
+        val sig36 = hostIdentity.signToBase64(rosterSignPayloadV36(max, ts, arrStr, gamePortOpen, cleanMap))
 
         val root = JSONObject().apply {
             put("max", max)
@@ -371,6 +388,9 @@ object TunnelProtocol {
             put("members", arr)
             put("pub", hostIdentity.publicKeyBase64)
             put("sig", sig)
+            put("gOpen", gamePortOpen)
+            put("map", cleanMap)
+            put("sig36", sig36)
         }
         val jb = root.toString().toByteArray(Charsets.UTF_8)
         return ByteBuffer.allocate(1 + jb.size).put(TYPE_ROSTER).put(jb).array()
@@ -386,11 +406,21 @@ object TunnelProtocol {
             if (ts <= 0L || abs(now - ts) > MAX_SIGN_SKEW_MS) return null
 
             val arr = root.optJSONArray("members") ?: return null
+            val arrStr = arr.toString()
             val sigB64 = root.optString("sig", "")
             val verifyKey = expectedHostKey ?: RoomCrypto.decodeEcPublicKey(root.optString("pub", "")) ?: return null
-            if (!RoomCrypto.verifySignature(verifyKey, rosterSignPayload(max, ts, arr.toString()), sigB64)) {
+            if (!RoomCrypto.verifySignature(verifyKey, rosterSignPayload(max, ts, arrStr), sigB64)) {
                 return null
             }
+
+            val rawGameOpen = root.optBoolean("gOpen", false)
+            val rawMap = RoomCrypto.cleanSafeText(root.optString("map", ""), 28)
+            val sig36B64 = root.optString("sig36", "")
+            val verifiedV36 = sig36B64.isNotBlank() && RoomCrypto.verifySignature(
+                verifyKey,
+                rosterSignPayloadV36(max, ts, arrStr, rawGameOpen, rawMap),
+                sig36B64
+            )
 
             val list = ArrayList<RoomMemberInfo>(arr.length())
             for (i in 0 until arr.length()) {
@@ -410,7 +440,12 @@ object TunnelProtocol {
                     )
                 )
             }
-            RosterPayload(max, list)
+            RosterPayload(
+                maxPlayers = max,
+                members = list,
+                gamePortOpen = if (verifiedV36) rawGameOpen else false,
+                mapMode = if (verifiedV36) rawMap else ""
+            )
         } catch (_: Exception) {
             null
         }
@@ -648,5 +683,17 @@ object TunnelProtocol {
         val validBroadcast = (d0 == 10 && d1 == 10 && d2 == 0 && d3 == 255) ||
             (d0 == 255 && d1 == 255 && d2 == 255 && d3 == 255)
         return validUnicast || validBroadcast
+    }
+
+    fun isOutgoingFromHostGamePort(pkt: ByteArray, len: Int): Boolean {
+        if (len < 28 || len > pkt.size) return false
+        val ver = (pkt[0].toInt() ushr 4) and 0x0F
+        val ihl = pkt[0].toInt() and 0x0F
+        val hdrLen = ihl * 4
+        if (ver != 4 || ihl < 5 || hdrLen + 4 > len) return false
+        val proto = pkt[9].toInt() and 0xFF
+        if (proto != 17 && proto != 6) return false
+        val srcPort = ((pkt[hdrLen].toInt() and 0xFF) shl 8) or (pkt[hdrLen + 1].toInt() and 0xFF)
+        return srcPort == SOURCE_GAME_PORT
     }
 }

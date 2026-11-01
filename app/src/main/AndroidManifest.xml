@@ -34,6 +34,10 @@
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize" />
 
+        <receiver
+            android:name=".vpn.NotificationActionReceiver"
+            android:exported="false" />
+
         <service
             android:name=".vpn.GdroidLanVpnService"
             android:exported="true"

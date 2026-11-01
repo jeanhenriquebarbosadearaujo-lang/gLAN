@@ -20,6 +20,9 @@
 - **Ping em Tempo Real (`ms`):** medição contínua da latência nos servidores públicos e em cada participante conectado na sala.
 - **Menu Lateral (Gaveta):** acesso organizado a **Perfil** (alteração de nome com filtro anti-+18/ofensas e verificação de nome único), **Configurações** (manter ativo em segundo plano sem restrição de bateria, reconexão automática Wi-Fi/4G, estatísticas de tráfego `KB/s`, ping automático na lista e avisos da sala), **Política de Privacidade**, **Termos de Serviço** e **Créditos**.
 - **Proteção de IP em Salas Públicas (Somente Ponte TLS):** oculta o endereço IP real do anfitrião e dos participantes em salas públicas, roteando toda a sessão via Ponte TLS sem expor endpoints UDP/STUN, além de pré-fixar criptograficamente a chave pública do host e aplicar proteção anti-flood por convidado.
+- **Detector Automático de Partida Aberta (`UDP 27015`):** detecta automaticamente quando o Host iniciou o mapa no GDroid/Source Engine e avisa todos os jogadores da sala na lista pública, no painel ativo e na barra de notificações.
+- ** Notificação Interativa com Ações Rápidas:** copie `connect 10.10.0.1:27015` para o console ou encerre/saia da sala direto pela notificação sem minimizar o jogo.
+- **Tag de Mapa/Modo e Feedback Criptografado:** identifique o mapa/modo da partida e envie relatos/sugestões com criptografia assimétrica ECIES P-256 + AES-128-GCM direto pelo menu lateral.
 - **Segurança Reforçada:** ECDH P-256 par-a-par + assinatura digital ECDSA P-256 + AES-128-GCM com janela anti-replay + Firewall interno IPv4 + TLS 1.2/1.3 obrigatório.
 
 ---
@@ -28,4 +31,4 @@
 
 - **Criador:** Jean Henrique
 - **TikTok:** `.memze`
-- **Versão Atual:** `3.5`
+- **Versão Atual:** `3.6`

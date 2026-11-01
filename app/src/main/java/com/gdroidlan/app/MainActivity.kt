@@ -28,11 +28,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
+import com.gdroidlan.app.admin.AdminBridge
 import com.gdroidlan.app.auth.AccountManagerStore
 import com.gdroidlan.app.auth.NameModerationFilter
 import com.gdroidlan.app.auth.NameRegistry
 import com.gdroidlan.app.crypto.RoomCrypto
 import com.gdroidlan.app.databinding.ActivityMainBinding
+import com.gdroidlan.app.databinding.DialogFeedbackBinding
 import com.gdroidlan.app.databinding.DialogProfileBinding
 import com.gdroidlan.app.databinding.DialogSettingsBinding
 import com.gdroidlan.app.databinding.ItemPeerRowBinding
@@ -65,6 +67,10 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_ROOM_ALERTS = "pref_room_join_leave_alerts"
         private const val PREF_AUTO_RECONNECT = "pref_auto_reconnect_net"
         private const val PREF_PROTECT_PUBLIC_IP = "pref_protect_public_ip"
+        private const val PREF_HOST_MAP_MODE = "host_map_mode_v36"
+        private const val PREF_LAST_FEEDBACK_AT = "pref_last_feedback_epoch_ms"
+        private const val PREF_SEEN_REPLY_ID = "pref_seen_admin_reply_id"
+        private const val FEEDBACK_COOLDOWN_MS = 45_000L
     }
 
     private lateinit var b: ActivityMainBinding
@@ -115,6 +121,7 @@ class MainActivity : AppCompatActivity() {
     private var ultimaAssinaturaMembrosAnimada = ""
     private var sessaoAtivaAnteriormente = false
     private var ultimaChaveBadgeStatus = ""
+    private var ultimoJogoAbertoUI: Boolean? = null
 
     private val tickerCooldownRunnable = object : Runnable {
         override fun run() {
@@ -199,6 +206,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val adminStateListener: (AdminBridge.VerifiedAdminState) -> Unit = { estado ->
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                renderizarComunicadoAdmin(estado)
+            }
+        }
+    }
+
+    private val adminReplyListener: (AdminBridge.VerifiedAdminReply) -> Unit = { resposta ->
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                exibirRespostaDiretaAdminSeNova(resposta)
+            }
+        }
+    }
+
     private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             if (res.resultCode == Activity.RESULT_OK) {
@@ -274,6 +297,12 @@ class MainActivity : AppCompatActivity() {
             b.layoutNomeSalaPublica.hint = "Nome da Sala (padrão: Sala de ${conta.displayName})"
         }
 
+        val mapaModoSalvo = prefs.getString(PREF_HOST_MAP_MODE, null).orEmpty()
+        if (mapaModoSalvo.isNotBlank()) {
+            b.edtMapaModoHost.setText(mapaModoSalvo)
+        }
+        lobbyBrowser.setActiveAccountTag(conta.accountTag)
+
         prefs.getString("last_friend_code", null)?.let { salvo ->
             b.edtCodigoAmigo.setText(salvo)
         }
@@ -317,8 +346,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        contaAtiva?.let { lobbyBrowser.setActiveAccountTag(it.accountTag) }
         GdroidLanVpnService.addListener(stateListener)
         UpdateNotifier.addListener(updateListener)
+        AdminBridge.addStateListener(adminStateListener)
+        AdminBridge.addReplyListener(adminReplyListener)
         gerenciarLobbyBrowserConformeEstado(GdroidLanVpnService.currentSnapshot)
         contaAtiva?.let { c ->
             lobbyBrowser.syncMyActiveNameIfNeeded(c.displayName, c.accountUid)
@@ -336,6 +368,8 @@ class MainActivity : AppCompatActivity() {
         if (verificandoSala) {
             verificandoSala = false
         }
+        AdminBridge.removeReplyListener(adminReplyListener)
+        AdminBridge.removeStateListener(adminStateListener)
         UpdateNotifier.removeListener(updateListener)
         GdroidLanVpnService.removeListener(stateListener)
         super.onStop()
@@ -351,9 +385,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.5"
+            pInfo.versionName ?: "3.6"
         } catch (_: Exception) {
-            "3.5"
+            "3.6"
         }
     }
 
@@ -371,6 +405,8 @@ class MainActivity : AppCompatActivity() {
             b.btnCompartilharCodigo,
             b.btnGerarNovoCodigo,
             b.btnCopiarIpHost,
+            b.btnCopiarConnectHost,
+            b.btnCopiarConnectCliente,
             b.btnCopiarIpParaJogo,
             b.btnAtualizarLobby,
             b.btnColarCodigoAmigo,
@@ -461,6 +497,7 @@ class MainActivity : AppCompatActivity() {
                     listOf(
                         b.btnMenuPerfil,
                         b.btnMenuConfiguracoes,
+                        b.btnMenuFeedback,
                         b.btnMenuPrivacidade,
                         b.btnMenuTermos,
                         b.btnMenuCreditos
@@ -486,6 +523,11 @@ class MainActivity : AppCompatActivity() {
         b.btnMenuConfiguracoes.setOnClickListener {
             b.drawerPrincipal.closeDrawer(GravityCompat.END)
             mostrarDialogoConfiguracoes()
+        }
+
+        b.btnMenuFeedback.setOnClickListener {
+            b.drawerPrincipal.closeDrawer(GravityCompat.END)
+            mostrarDialogoFeedback()
         }
 
         b.btnMenuPrivacidade.setOnClickListener {
@@ -815,6 +857,206 @@ class MainActivity : AppCompatActivity() {
     }
 
     // =========================================================================
+    // FEEDBACK CRIPTOGRAFADO E COMUNICADOS / RESPOSTAS DA ADMINISTRAÇÃO
+    // =========================================================================
+
+    private fun renderizarComunicadoAdmin(estado: AdminBridge.VerifiedAdminState) {
+        val motivoBan = AdminBridge.checkAccountBanReason(contaAtiva?.accountTag)
+        if (motivoBan != null) {
+            b.cardAvisoAdmin.setCardBackgroundColor(Color.parseColor("#1CEF4444"))
+            b.cardAvisoAdmin.strokeColor = Color.parseColor("#66EF4444")
+            b.txtTituloAvisoAdmin.setTextColor(Color.parseColor("#EF4444"))
+            b.txtTituloAvisoAdmin.text = "CONTA SUSPENSA PELA ADMINISTRAÇÃO"
+            b.txtCorpoAvisoAdmin.text = motivoBan
+            UiMotion.setPanelVisible(b.cardAvisoAdmin, true)
+            return
+        }
+
+        if (!estado.bannerActive || estado.bannerBody.isBlank()) {
+            UiMotion.setPanelVisible(b.cardAvisoAdmin, false)
+            return
+        }
+
+        when (estado.bannerStyle.lowercase()) {
+            "alert", "danger" -> {
+                b.cardAvisoAdmin.setCardBackgroundColor(Color.parseColor("#1AEF4444"))
+                b.cardAvisoAdmin.strokeColor = Color.parseColor("#59EF4444")
+                b.txtTituloAvisoAdmin.setTextColor(Color.parseColor("#EF4444"))
+            }
+            "warn", "warning" -> {
+                b.cardAvisoAdmin.setCardBackgroundColor(Color.parseColor("#1AF59E0B"))
+                b.cardAvisoAdmin.strokeColor = Color.parseColor("#59F59E0B")
+                b.txtTituloAvisoAdmin.setTextColor(Color.parseColor("#F59E0B"))
+            }
+            else -> {
+                b.cardAvisoAdmin.setCardBackgroundColor(Color.parseColor("#1638BDF8"))
+                b.cardAvisoAdmin.strokeColor = Color.parseColor("#4D38BDF8")
+                b.txtTituloAvisoAdmin.setTextColor(Color.parseColor("#38BDF8"))
+            }
+        }
+        b.txtTituloAvisoAdmin.text = estado.bannerTitle.uppercase()
+        b.txtCorpoAvisoAdmin.text = estado.bannerBody
+        UiMotion.setPanelVisible(b.cardAvisoAdmin, true)
+    }
+
+    private fun exibirRespostaDiretaAdminSeNova(resposta: AdminBridge.VerifiedAdminReply) {
+        val minhaTag = AdminBridge.normalizeTag(contaAtiva?.accountTag.orEmpty())
+        if (minhaTag.isBlank() || resposta.targetTag != minhaTag) return
+        val ultimaVista = prefs.getString(PREF_SEEN_REPLY_ID, "").orEmpty()
+        if (resposta.replyId == ultimaVista) return
+
+        prefs.edit().putString(PREF_SEEN_REPLY_ID, resposta.replyId).apply()
+        UiMotion.hapticConfirm(b.layoutCabecalhoTopo)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Resposta da Administração")
+            .setMessage(resposta.message)
+            .setPositiveButton("Entendi", null)
+            .show()
+    }
+
+    private fun mostrarDialogoFeedback() {
+        val conta = contaAtiva ?: return
+        val banMotivo = AdminBridge.checkAccountBanReason(conta.accountTag)
+        if (banMotivo != null) {
+            toast("Conta suspensa: $banMotivo")
+            return
+        }
+
+        val fb = DialogFeedbackBinding.inflate(layoutInflater)
+        var categoriaSelecionada = "Bug"
+
+        fun estilizarCategoria(animar: Boolean) {
+            val opcoes = listOf(
+                fb.btnCatBug to (categoriaSelecionada == "Bug"),
+                fb.btnCatSugestao to (categoriaSelecionada == "Sugestão"),
+                fb.btnCatDenuncia to (categoriaSelecionada == "Denúncia")
+            )
+            for ((botao, ativa) in opcoes) {
+                UiMotion.styleSegmentedPill(
+                    button = botao,
+                    selected = ativa,
+                    activeBg = Color.parseColor("#1E3152"),
+                    inactiveBg = Color.TRANSPARENT,
+                    activeText = Color.parseColor("#F1F5F9"),
+                    inactiveText = Color.parseColor("#94A3B8"),
+                    strokeWidthPx = dpToPx(1),
+                    strokeColor = Color.parseColor("#4738BDF8"),
+                    animate = animar
+                )
+            }
+        }
+        estilizarCategoria(false)
+        UiMotion.attachTactilePress(
+            fb.btnCatBug,
+            fb.btnCatSugestao,
+            fb.btnCatDenuncia,
+            fb.btnCancelarFeedback,
+            fb.btnEnviarFeedbackAgora
+        )
+
+        fb.btnCatBug.setOnClickListener {
+            if (categoriaSelecionada != "Bug") {
+                categoriaSelecionada = "Bug"
+                UiMotion.hapticTick(fb.btnCatBug)
+                estilizarCategoria(true)
+            }
+        }
+        fb.btnCatSugestao.setOnClickListener {
+            if (categoriaSelecionada != "Sugestão") {
+                categoriaSelecionada = "Sugestão"
+                UiMotion.hapticTick(fb.btnCatSugestao)
+                estilizarCategoria(true)
+            }
+        }
+        fb.btnCatDenuncia.setOnClickListener {
+            if (categoriaSelecionada != "Denúncia") {
+                categoriaSelecionada = "Denúncia"
+                UiMotion.hapticTick(fb.btnCatDenuncia)
+                estilizarCategoria(true)
+            }
+        }
+
+        val dlg = MaterialAlertDialogBuilder(this)
+            .setTitle("Enviar Feedback")
+            .setView(fb.root)
+            .create()
+
+        fb.btnCancelarFeedback.setOnClickListener {
+            dlg.dismiss()
+        }
+
+        fb.btnEnviarFeedbackAgora.setOnClickListener {
+            val agoraWall = System.currentTimeMillis()
+            val ultimoEnvio = prefs.getLong(PREF_LAST_FEEDBACK_AT, 0L)
+            val restSeg = ((FEEDBACK_COOLDOWN_MS - (agoraWall - ultimoEnvio) + 999L) / 1000L).toInt()
+            if (ultimoEnvio > 0L && restSeg > 0) {
+                fb.txtStatusFeedback.text = "Aguarde ${restSeg}s antes de enviar outro feedback."
+                fb.txtStatusFeedback.setTextColor(Color.parseColor("#F59E0B"))
+                UiMotion.setPanelVisible(fb.txtStatusFeedback, true)
+                UiMotion.shakeError(fb.root)
+                return@setOnClickListener
+            }
+
+            val texto = fb.edtMensagemFeedback.text?.toString()?.trim().orEmpty()
+            if (texto.length < 6) {
+                fb.txtStatusFeedback.text = "Escreva pelo menos 6 caracteres descrevendo sua mensagem."
+                fb.txtStatusFeedback.setTextColor(Color.parseColor("#EF4444"))
+                UiMotion.setPanelVisible(fb.txtStatusFeedback, true)
+                UiMotion.shakeError(fb.layoutMensagemFeedback)
+                return@setOnClickListener
+            }
+
+            fb.edtMensagemFeedback.isEnabled = false
+            fb.btnCancelarFeedback.isEnabled = false
+            fb.btnEnviarFeedbackAgora.isEnabled = false
+            fb.btnEnviarFeedbackAgora.text = "Enviando..."
+            UiMotion.setBreathingPulse(fb.btnEnviarFeedbackAgora, true)
+            fb.txtStatusFeedback.text = "Criptografando e enviando de forma segura..."
+            fb.txtStatusFeedback.setTextColor(Color.parseColor("#38BDF8"))
+            UiMotion.setPanelVisible(fb.txtStatusFeedback, true)
+
+            val snap = GdroidLanVpnService.currentSnapshot
+            val resumoRede = if (isSessaoAtiva(snap)) {
+                "${snap.routeMode} (${snap.pingMs} ms)"
+            } else {
+                "Lobby"
+            }
+
+            AdminBridge.sendEncryptedFeedbackAsync(
+                category = categoriaSelecionada,
+                displayName = conta.displayName,
+                accountUid = conta.accountUid,
+                accountTag = conta.accountTag,
+                message = texto,
+                appVersion = obterVersaoInstalada(),
+                networkSummary = resumoRede
+            ) { enviado ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || !dlg.isShowing) return@runOnUiThread
+                    UiMotion.setBreathingPulse(fb.btnEnviarFeedbackAgora, false)
+                    if (enviado) {
+                        prefs.edit().putLong(PREF_LAST_FEEDBACK_AT, System.currentTimeMillis()).apply()
+                        UiMotion.hapticConfirm(b.layoutCabecalhoTopo)
+                        dlg.dismiss()
+                        toast("Feedback enviado com sucesso. Obrigado pela colaboração!")
+                    } else {
+                        fb.edtMensagemFeedback.isEnabled = true
+                        fb.btnCancelarFeedback.isEnabled = true
+                        fb.btnEnviarFeedbackAgora.isEnabled = true
+                        fb.btnEnviarFeedbackAgora.text = "Enviar"
+                        fb.txtStatusFeedback.text = "Sem conexão no momento. Verifique sua internet e tente novamente."
+                        fb.txtStatusFeedback.setTextColor(Color.parseColor("#EF4444"))
+                        UiMotion.setPanelVisible(fb.txtStatusFeedback, true)
+                        UiMotion.shakeError(fb.root)
+                    }
+                }
+            }
+        }
+
+        dlg.show()
+    }
+
+    // =========================================================================
     // PESQUISA EM SERVIDORES PÚBLICOS
     // =========================================================================
 
@@ -966,7 +1208,20 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putString("host_room_title", txt).apply()
             }
         })
+
+        b.edtMapaModoHost.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (isSessaoAtiva()) return
+                val txt = RoomCrypto.cleanSafeText(s?.toString().orEmpty(), 28)
+                prefs.edit().putString(PREF_HOST_MAP_MODE, txt).apply()
+            }
+        })
     }
+
+    private fun obterMapaModoHostAtual(): String =
+        RoomCrypto.cleanSafeText(b.edtMapaModoHost.text?.toString().orEmpty(), 28)
 
     private fun valResSalaRecusada(tituloDigitado: String): Boolean {
         return when (val chk = NameModerationFilter.validateRoomTitle(tituloDigitado)) {
@@ -1059,6 +1314,8 @@ class MainActivity : AppCompatActivity() {
         b.grupoVisibilidade.alpha = if (ativoComoHost) 0.45f else 1.0f
         b.edtNomeSalaPublica.isEnabled = !ativoComoHost
         b.layoutNomeSalaPublica.alpha = if (ativoComoHost) 0.55f else 1.0f
+        b.edtMapaModoHost.isEnabled = !ativoComoHost
+        b.layoutMapaModoHost.alpha = if (ativoComoHost) 0.55f else 1.0f
         b.txtLabelVisibilidade.text = if (ativoComoHost) {
             "VISIBILIDADE DA SALA (TRAVADA EM SESSÃO)"
         } else {
@@ -1217,7 +1474,7 @@ class MainActivity : AppCompatActivity() {
             val anfitriao = contaAtiva?.displayName ?: "Anfitrião"
             val msg = "Sala gLAN de $anfitriao\n" +
                 "Código da Sala: $codigoHostAtual\n" +
-                "IP no GDroid: ${TunnelProtocol.HOST_VIRTUAL_IP}"
+                "Console GDroid: ${TunnelProtocol.HOST_CONNECT_CMD}"
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, msg)
@@ -1250,6 +1507,22 @@ class MainActivity : AppCompatActivity() {
             UiMotion.pulseConfirmation(b.txtIpParaAmigos)
             aplicarCooldownBotaoRapido(b.btnCopiarIpHost, 1_500L, "Copiado")
             toast("IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado.")
+        }
+
+        b.btnCopiarConnectHost.setOnClickListener {
+            copiarTexto("Console GDroid", TunnelProtocol.HOST_CONNECT_CMD)
+            UiMotion.hapticConfirm(b.btnCopiarConnectHost)
+            UiMotion.pulseConfirmation(b.txtIpParaAmigos)
+            aplicarCooldownBotaoRapido(b.btnCopiarConnectHost, 1_500L, "Copiado")
+            toast("Comando copiado: ${TunnelProtocol.HOST_CONNECT_CMD}")
+        }
+
+        b.btnCopiarConnectCliente.setOnClickListener {
+            copiarTexto("Console GDroid", TunnelProtocol.HOST_CONNECT_CMD)
+            UiMotion.hapticConfirm(b.btnCopiarConnectCliente)
+            UiMotion.pulseConfirmation(b.txtIpHostParaCliente)
+            aplicarCooldownBotaoRapido(b.btnCopiarConnectCliente, 1_500L, "Copiado")
+            toast("Comando copiado: ${TunnelProtocol.HOST_CONNECT_CMD}")
         }
 
         b.btnCopiarIpParaJogo.setOnClickListener {
@@ -1305,11 +1578,25 @@ class MainActivity : AppCompatActivity() {
             }
 
             limparErroVerificacaoLocal()
+            val banMotivo = AdminBridge.checkAccountBanReason(contaAtiva?.accountTag)
+            if (banMotivo != null) {
+                exibirErroSalaLocal("CONTA SUSPENSA", banMotivo)
+                return@setOnClickListener
+            }
             when (abaSelecionada) {
                 AbaPrincipal.CRIAR_SERVIDOR -> {
                     if (salaPublicaSelecionada) {
                         val tituloDigitado = b.edtNomeSalaPublica.text?.toString().orEmpty()
                         if (valResSalaRecusada(tituloDigitado)) return@setOnClickListener
+                    }
+                    val mapaDigitado = obterMapaModoHostAtual()
+                    if (mapaDigitado.isNotBlank() && valResSalaRecusada(mapaDigitado)) {
+                        return@setOnClickListener
+                    }
+                    if (AdminBridge.isRoomRecentlyKilledByAdmin(codigoHostAtual)) {
+                        codigoHostAtual = RoomCrypto.generateRoomCode()
+                        prefs.edit().putString("host_room_code", codigoHostAtual).apply()
+                        b.txtCodigoHost.text = codigoHostAtual
                     }
                     solicitarVpnEIniciar(
                         asHost = true,
@@ -1375,6 +1662,17 @@ class MainActivity : AppCompatActivity() {
         if (verificandoSala || isSessaoAtiva()) return
         val agora = SystemClock.elapsedRealtime()
         if (segundosRestantes(cooldownPrincipalAteMs, agora) > 0) return
+
+        val banMotivo = AdminBridge.checkAccountBanReason(contaAtiva?.accountTag)
+        if (banMotivo != null) {
+            exibirErroSalaLocal("CONTA SUSPENSA", banMotivo)
+            return
+        }
+        if (AdminBridge.isRoomRecentlyKilledByAdmin(codigoNormalizado)) {
+            lobbyBrowser.removeRoomImmediately(codigoNormalizado)
+            exibirErroSalaLocal("SALA ENCERRADA", "Esta sala foi encerrada pela administração do gLAN.")
+            return
+        }
 
         verificandoSala = true
         limparErroVerificacaoLocal()
@@ -1478,7 +1776,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             salas.filter { s ->
                 normalizarParaBusca(s.roomTitle).contains(termoBusca) ||
-                    normalizarParaBusca(s.hostName).contains(termoBusca)
+                    normalizarParaBusca(s.hostName).contains(termoBusca) ||
+                    normalizarParaBusca(s.mapMode).contains(termoBusca)
             }
         }
 
@@ -1514,6 +1813,20 @@ class MainActivity : AppCompatActivity() {
                 "Host: ${sala.hostName} • IP Oculto • ${TunnelProtocol.HOST_VIRTUAL_IP}"
             } else {
                 "Host: ${sala.hostName} • IP: ${TunnelProtocol.HOST_VIRTUAL_IP}"
+            }
+            val temJogoAberto = sala.gamePortOpen
+            val temMapa = sala.mapMode.isNotBlank()
+            if (temJogoAberto || temMapa) {
+                item.layoutBadgesSalaPublica.visibility = View.VISIBLE
+                item.txtJogoAbertoSalaPublica.visibility = if (temJogoAberto) View.VISIBLE else View.GONE
+                if (temMapa) {
+                    item.txtMapaModoSalaPublica.text = sala.mapMode
+                    item.txtMapaModoSalaPublica.visibility = View.VISIBLE
+                } else {
+                    item.txtMapaModoSalaPublica.visibility = View.GONE
+                }
+            } else {
+                item.layoutBadgesSalaPublica.visibility = View.GONE
             }
             item.txtVagasSalaPublica.text = "${sala.currentPlayers} / ${sala.maxPlayers}"
 
@@ -1603,9 +1916,11 @@ class MainActivity : AppCompatActivity() {
             putExtra(GdroidLanVpnService.EXTRA_ROOM_CODE, code)
             putExtra(GdroidLanVpnService.EXTRA_PLAYER_NAME, conta?.displayName ?: "Jogador")
             putExtra(GdroidLanVpnService.EXTRA_ACCOUNT_UID, conta?.accountUid ?: 0L)
+            putExtra(GdroidLanVpnService.EXTRA_ACCOUNT_TAG, conta?.accountTag ?: "")
             putExtra(GdroidLanVpnService.EXTRA_MAX_PLAYERS, limiteJogadores)
             putExtra(GdroidLanVpnService.EXTRA_IS_PUBLIC, asHost && salaPublicaSelecionada)
             putExtra(GdroidLanVpnService.EXTRA_ROOM_TITLE, obterTituloSalaAtual())
+            putExtra(GdroidLanVpnService.EXTRA_MAP_MODE, if (asHost) obterMapaModoHostAtual() else "")
             putExtra(GdroidLanVpnService.EXTRA_AUTO_RECONNECT, prefReconectarAuto)
             putExtra(GdroidLanVpnService.EXTRA_PROTECT_IP, protectIp)
             if (!asHost && expectedHostPubKeyB64.isNotBlank()) {
@@ -1762,6 +2077,7 @@ class MainActivity : AppCompatActivity() {
                 estilizarAbasSelecionadas(animar = true)
             }
         } else {
+            ultimoJogoAbertoUI = null
             ultimaAssinaturaMembrosAnimada = ""
         }
 
@@ -1892,6 +2208,37 @@ class MainActivity : AppCompatActivity() {
         b.btnGerarNovoCodigo.visibility = if (ativo) View.INVISIBLE else View.VISIBLE
 
         if (ativo) {
+            val jogoMudou = (ultimoJogoAbertoUI != snap.gamePortOpen)
+            ultimoJogoAbertoUI = snap.gamePortOpen
+            if (snap.gamePortOpen) {
+                UiMotion.setBreathingPulse(b.viewDotJogoGdroid, false)
+                b.viewDotJogoGdroid.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#10B981"))
+                b.txtStatusJogoGdroid.text = "Partida aberta no GDroid (porta 27015 ativa)"
+                b.txtStatusJogoGdroid.setTextColor(Color.parseColor("#10B981"))
+                b.txtMapaAtivoSessao.text = if (snap.mapMode.isNotBlank()) {
+                    "Mapa/Modo: ${snap.mapMode} • Console: ${TunnelProtocol.HOST_CONNECT_CMD}"
+                } else {
+                    "Pronta para entrar • Console: ${TunnelProtocol.HOST_CONNECT_CMD}"
+                }
+                if (jogoMudou) {
+                    UiMotion.pulseConfirmation(b.boxStatusJogoGdroid)
+                }
+            } else {
+                b.viewDotJogoGdroid.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#F59E0B"))
+                UiMotion.setBreathingPulse(b.viewDotJogoGdroid, true)
+                b.txtStatusJogoGdroid.text = if (snap.isHost) {
+                    "Abra um mapa no GDroid para liberar a partida"
+                } else {
+                    "Aguardando o Host iniciar o mapa no GDroid"
+                }
+                b.txtStatusJogoGdroid.setTextColor(Color.parseColor("#F1F5F9"))
+                b.txtMapaAtivoSessao.text = if (snap.mapMode.isNotBlank()) {
+                    "Mapa/Modo previsto: ${snap.mapMode} • Detector UDP 27015 ativo"
+                } else {
+                    "Detector automático Source Engine (UDP 27015)"
+                }
+            }
+
             b.txtMeuIpVirtual.text = snap.myVirtualIp
             if (snap.phase == GdroidLanVpnService.StatusPhase.RECONNECTING) {
                 b.txtPingRota.text = "Reconectando..."
