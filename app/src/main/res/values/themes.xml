@@ -20,6 +20,12 @@
         <item name="colorOnSurfaceVariant">@color/text_secondary</item>
         <item name="colorPrimary">@color/neon_cyan</item>
         <item name="shapeAppearanceOverlay">@style/ShapeAppearance.GDroidLAN.Dialog</item>
+        <item name="android:windowAnimationStyle">@style/Animation.GDroidLAN.Dialog</item>
+    </style>
+
+    <style name="Animation.GDroidLAN.Dialog" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/anim_dialog_enter</item>
+        <item name="android:windowExitAnimation">@anim/anim_dialog_exit</item>
     </style>
 
     <style name="ShapeAppearance.GDroidLAN.Dialog" parent="">

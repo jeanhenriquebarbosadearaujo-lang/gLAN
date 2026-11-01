@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="tag_motion_bg_color" type="id" />
+    <item name="tag_motion_icon_color" type="id" />
+    <item name="tag_motion_color_anim" type="id" />
+    <item name="tag_motion_pulse_anim" type="id" />
+    <item name="tag_motion_shake_anim" type="id" />
+</resources>

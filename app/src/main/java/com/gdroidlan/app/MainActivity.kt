@@ -27,6 +27,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
 import com.gdroidlan.app.auth.AccountManagerStore
 import com.gdroidlan.app.auth.NameModerationFilter
 import com.gdroidlan.app.auth.NameRegistry
@@ -37,6 +38,7 @@ import com.gdroidlan.app.databinding.DialogSettingsBinding
 import com.gdroidlan.app.databinding.ItemPeerRowBinding
 import com.gdroidlan.app.databinding.ItemPublicRoomBinding
 import com.gdroidlan.app.net.PublicLobbyBrowser
+import com.gdroidlan.app.ui.UiMotion
 import com.gdroidlan.app.update.OfficialVersionCert
 import com.gdroidlan.app.update.UpdateNotifier
 import com.gdroidlan.app.vpn.GdroidLanVpnService
@@ -107,6 +109,12 @@ class MainActivity : AppCompatActivity() {
     private var cooldownRenomearAteMs = 0L
     private var ultimoToqueAbaMs = 0L
     private var ultimoCodigoAvisoPopup = 0
+
+    // Estado de coreografia e micro-interações (evita reanimar em ticks periódicos de ping/tráfego)
+    private var ultimaAssinaturaSalasAnimada = ""
+    private var ultimaAssinaturaMembrosAnimada = ""
+    private var sessaoAtivaAnteriormente = false
+    private var ultimaChaveBadgeStatus = ""
 
     private val tickerCooldownRunnable = object : Runnable {
         override fun run() {
@@ -276,6 +284,7 @@ class MainActivity : AppCompatActivity() {
         configurarAbasPrincipais()
         configurarSeletorCapacidade()
         configurarBotoesPrincipais()
+        configurarAnimacoesIniciais()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -342,10 +351,51 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.4"
+            pInfo.versionName ?: "3.5"
         } catch (_: Exception) {
-            "3.4"
+            "3.5"
         }
+    }
+
+    private fun configurarAnimacoesIniciais() {
+        UiMotion.attachTactilePress(
+            b.btnMenuLateral,
+            b.btnModoPublicos,
+            b.btnModoEntrar,
+            b.btnModoCriar,
+            b.btnSalaPrivada,
+            b.btnSalaPublica,
+            b.btnMenosVagas,
+            b.btnMaisVagas,
+            b.btnCopiarCodigoHost,
+            b.btnCompartilharCodigo,
+            b.btnGerarNovoCodigo,
+            b.btnCopiarIpHost,
+            b.btnCopiarIpParaJogo,
+            b.btnAtualizarLobby,
+            b.btnColarCodigoAmigo,
+            b.btnAcaoPrincipal,
+            b.btnTestarPing,
+            b.btnDesbloquearRemovidos
+        )
+
+        val cardInicial = when (abaSelecionada) {
+            AbaPrincipal.SERVIDORES_PUBLICOS -> b.cardServidoresPublicos
+            AbaPrincipal.ENTRAR_SALA -> b.cardEntrarCodigo
+            AbaPrincipal.CRIAR_SERVIDOR -> b.cardHost
+        }
+        UiMotion.animateStaggeredEntrance(
+            listOf(
+                b.layoutCabecalhoTopo,
+                b.grupoModo,
+                cardInicial,
+                b.btnAcaoPrincipal,
+                b.cardComoUsar
+            ),
+            startDelayMs = 20L,
+            stepDelayMs = 45L,
+            distanceDp = 14f
+        )
     }
 
     private fun obterVersionCodeInstalado(): Int {
@@ -369,7 +419,7 @@ class MainActivity : AppCompatActivity() {
         b.txtTituloAvisoAtualizacao.text = "ATUALIZAÇÃO DISPONÍVEL • v${novaVersao.versionName}"
         b.txtCorpoAvisoAtualizacao.text =
             "Você está usando a versão v$versaoAtual. Atualize o gLAN para a versão v${novaVersao.versionName} para manter todos os recursos e compatibilidade nas salas."
-        b.cardAvisoAtualizacao.visibility = View.VISIBLE
+        UiMotion.setPanelVisible(b.cardAvisoAtualizacao, true)
 
         if (ultimoCodigoAvisoPopup < novaVersao.versionCode) {
             ultimoCodigoAvisoPopup = novaVersao.versionCode
@@ -405,7 +455,22 @@ class MainActivity : AppCompatActivity() {
     // =========================================================================
 
     private fun configurarMenuGaveta(versao: String) {
+        b.drawerPrincipal.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
+            override fun onDrawerOpened(drawerView: View) {
+                UiMotion.animateDrawerItems(
+                    listOf(
+                        b.btnMenuPerfil,
+                        b.btnMenuConfiguracoes,
+                        b.btnMenuPrivacidade,
+                        b.btnMenuTermos,
+                        b.btnMenuCreditos
+                    )
+                )
+            }
+        })
+
         b.btnMenuLateral.setOnClickListener {
+            UiMotion.hapticTick(b.btnMenuLateral)
             if (b.drawerPrincipal.isDrawerOpen(GravityCompat.END)) {
                 b.drawerPrincipal.closeDrawer(GravityCompat.END)
             } else {
@@ -482,6 +547,7 @@ class MainActivity : AppCompatActivity() {
         prof.txtPerfilTagConta.text = "ID da instalação: #${conta.accountTag}"
         prof.edtNovoNomePerfil.setText(conta.displayName)
         prof.edtNovoNomePerfil.setSelection(conta.displayName.length)
+        UiMotion.attachTactilePress(prof.btnSalvarPerfil, prof.btnFecharPerfil)
 
         val dlg = MaterialAlertDialogBuilder(this)
             .setTitle("Perfil")
@@ -534,7 +600,8 @@ class MainActivity : AppCompatActivity() {
                 is NameModerationFilter.CheckResult.Rejected -> {
                     prof.txtMensagemPerfil.text = mod.reason
                     prof.txtMensagemPerfil.setTextColor(Color.parseColor("#EF4444"))
-                    prof.txtMensagemPerfil.visibility = View.VISIBLE
+                    UiMotion.setPanelVisible(prof.txtMensagemPerfil, true)
+                    UiMotion.shakeError(prof.root)
                     return@setOnClickListener
                 }
             }
@@ -549,9 +616,10 @@ class MainActivity : AppCompatActivity() {
             prof.btnSalvarPerfil.isEnabled = false
             prof.btnFecharPerfil.isEnabled = false
             prof.btnSalvarPerfil.text = "Verificando..."
+            UiMotion.setBreathingPulse(prof.btnSalvarPerfil, true)
             prof.txtMensagemPerfil.text = "Verificando disponibilidade do nome..."
             prof.txtMensagemPerfil.setTextColor(Color.parseColor("#38BDF8"))
-            prof.txtMensagemPerfil.visibility = View.VISIBLE
+            UiMotion.setPanelVisible(prof.txtMensagemPerfil, true)
 
             lobbyBrowser.verifyAndClaimRename(
                 oldDisplayName = contaAtual.displayName,
@@ -560,6 +628,7 @@ class MainActivity : AppCompatActivity() {
             ) { resultado ->
                 runOnUiThread {
                     if (isFinishing || isDestroyed || !dlg.isShowing) return@runOnUiThread
+                    UiMotion.setBreathingPulse(prof.btnSalvarPerfil, false)
 
                     when (resultado) {
                         is NameRegistry.ClaimResult.AlreadyTaken -> {
@@ -569,7 +638,8 @@ class MainActivity : AppCompatActivity() {
                             prof.btnSalvarPerfil.text = "Salvar Nome"
                             prof.txtMensagemPerfil.text = "Já existe um usuário com esse nome."
                             prof.txtMensagemPerfil.setTextColor(Color.parseColor("#EF4444"))
-                            prof.txtMensagemPerfil.visibility = View.VISIBLE
+                            UiMotion.setPanelVisible(prof.txtMensagemPerfil, true)
+                            UiMotion.shakeError(prof.root)
                         }
                         is NameRegistry.ClaimResult.Claimed -> {
                             when (val salvo = AccountManagerStore.renameActiveAccount(this, validado)) {
@@ -577,6 +647,7 @@ class MainActivity : AppCompatActivity() {
                                     contaAtiva = salvo.account
                                     b.txtContaTopo.text = "Conta: ${salvo.account.displayName}"
                                     b.txtContaMenu.text = "Conta: ${salvo.account.displayName}"
+                                    UiMotion.pulseConfirmation(b.txtContaTopo)
                                     if (b.edtNomeSalaPublica.text.isNullOrBlank()) {
                                         b.layoutNomeSalaPublica.hint =
                                             "Nome da Sala (padrão: Sala de ${salvo.account.displayName})"
@@ -592,7 +663,8 @@ class MainActivity : AppCompatActivity() {
                                     prof.btnSalvarPerfil.text = "Salvar Nome"
                                     prof.txtMensagemPerfil.text = salvo.message
                                     prof.txtMensagemPerfil.setTextColor(Color.parseColor("#EF4444"))
-                                    prof.txtMensagemPerfil.visibility = View.VISIBLE
+                                    UiMotion.setPanelVisible(prof.txtMensagemPerfil, true)
+                                    UiMotion.shakeError(prof.root)
                                 }
                             }
                         }
@@ -631,6 +703,7 @@ class MainActivity : AppCompatActivity() {
         cfg.btnAbrirAjusteBateria.setOnClickListener {
             abrirAjustesDeBateriaDoSistema()
         }
+        UiMotion.attachTactilePress(cfg.btnAbrirAjusteBateria)
 
         cfg.switchReconectarAuto.setOnCheckedChangeListener { _, isChecked ->
             prefReconectarAuto = isChecked
@@ -646,7 +719,7 @@ class MainActivity : AppCompatActivity() {
         cfg.switchMostrarTrafego.setOnCheckedChangeListener { _, isChecked ->
             prefMostrarTrafego = isChecked
             prefs.edit().putBoolean(PREF_SHOW_TRAFFIC, isChecked).apply()
-            b.cardEstatisticasRede.visibility = if (isChecked && isSessaoAtiva()) View.VISIBLE else View.GONE
+            UiMotion.setPanelVisible(b.cardEstatisticasRede, isChecked && isSessaoAtiva())
         }
 
         cfg.switchPingLobby.setOnCheckedChangeListener { _, isChecked ->
@@ -821,33 +894,34 @@ class MainActivity : AppCompatActivity() {
     private fun dpToPx(dp: Int): Int =
         (dp * resources.displayMetrics.density + 0.5f).toInt()
 
-    private fun estilizarVisibilidadeHost() {
+    private fun estilizarVisibilidadeHost(animar: Boolean = false) {
         val opcoes = listOf(
             b.btnSalaPrivada to (!salaPublicaSelecionada),
             b.btnSalaPublica to salaPublicaSelecionada
         )
         for ((botao, ativo) in opcoes) {
-            if (ativo) {
-                botao.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#1E3152"))
-                botao.setTextColor(Color.parseColor("#F1F5F9"))
-                botao.iconTint = ColorStateList.valueOf(Color.parseColor("#38BDF8"))
-                botao.strokeWidth = dpToPx(1)
-                botao.strokeColor = ColorStateList.valueOf(Color.parseColor("#4738BDF8"))
-            } else {
-                botao.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
-                botao.setTextColor(Color.parseColor("#94A3B8"))
-                botao.iconTint = ColorStateList.valueOf(Color.parseColor("#64748B"))
-                botao.strokeWidth = 0
-            }
+            UiMotion.styleSegmentedPill(
+                button = botao,
+                selected = ativo,
+                activeBg = Color.parseColor("#1E3152"),
+                inactiveBg = Color.TRANSPARENT,
+                activeText = Color.parseColor("#F1F5F9"),
+                inactiveText = Color.parseColor("#94A3B8"),
+                strokeWidthPx = dpToPx(1),
+                strokeColor = Color.parseColor("#4738BDF8"),
+                activeIcon = Color.parseColor("#38BDF8"),
+                inactiveIcon = Color.parseColor("#64748B"),
+                animate = animar
+            )
         }
     }
 
-    private fun atualizarAvisoProtecaoIpHost() {
+    private fun atualizarAvisoProtecaoIpHost(animar: Boolean = false) {
         if (!salaPublicaSelecionada) {
-            b.txtInfoProtecaoIpPublica.visibility = View.GONE
+            UiMotion.setPanelVisible(b.txtInfoProtecaoIpPublica, false, animate = animar)
             return
         }
-        b.txtInfoProtecaoIpPublica.visibility = View.VISIBLE
+        UiMotion.setPanelVisible(b.txtInfoProtecaoIpPublica, true, animate = animar)
         if (prefProtegerIpPublico) {
             b.txtInfoProtecaoIpPublica.text =
                 "Proteção de IP ativa: somente Ponte TLS (seu IP real fica oculto)."
@@ -860,21 +934,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun configurarVisibilidadeHost() {
-        estilizarVisibilidadeHost()
+        estilizarVisibilidadeHost(animar = false)
         b.layoutNomeSalaPublica.visibility = if (salaPublicaSelecionada) View.VISIBLE else View.GONE
-        atualizarAvisoProtecaoIpHost()
+        atualizarAvisoProtecaoIpHost(animar = false)
 
         val alternarVisibilidade: (Boolean) -> Unit = { publica ->
             if (isSessaoAtiva()) {
                 if (publica != salaPublicaSelecionada) {
+                    UiMotion.shakeError(b.grupoVisibilidade)
                     toast("Encerre o servidor antes de mudar a visibilidade da sala.")
                 }
             } else if (publica != salaPublicaSelecionada) {
                 salaPublicaSelecionada = publica
                 prefs.edit().putBoolean("host_is_public", salaPublicaSelecionada).apply()
-                estilizarVisibilidadeHost()
-                b.layoutNomeSalaPublica.visibility = if (salaPublicaSelecionada) View.VISIBLE else View.GONE
-                atualizarAvisoProtecaoIpHost()
+                UiMotion.hapticTick(if (publica) b.btnSalaPublica else b.btnSalaPrivada)
+                estilizarVisibilidadeHost(animar = true)
+                UiMotion.setPanelVisible(b.layoutNomeSalaPublica, salaPublicaSelecionada, animate = true)
+                atualizarAvisoProtecaoIpHost(animar = true)
             }
         }
 
@@ -912,19 +988,23 @@ class MainActivity : AppCompatActivity() {
     private fun configurarSeletorCapacidade() {
         b.btnMenosVagas.setOnClickListener {
             if (isSessaoAtiva()) {
+                UiMotion.shakeError(b.txtNumeroJogadores)
                 toast("Encerre o servidor antes de alterar o limite de jogadores.")
                 return@setOnClickListener
             }
             if (limiteJogadores > TunnelProtocol.MIN_TOTAL_PLAYERS) {
+                UiMotion.hapticTick(b.btnMenosVagas)
                 definirLimiteJogadores(limiteJogadores - 1)
             }
         }
         b.btnMaisVagas.setOnClickListener {
             if (isSessaoAtiva()) {
+                UiMotion.shakeError(b.txtNumeroJogadores)
                 toast("Encerre o servidor antes de alterar o limite de jogadores.")
                 return@setOnClickListener
             }
             if (limiteJogadores < TunnelProtocol.MAX_TOTAL_PLAYERS) {
+                UiMotion.hapticTick(b.btnMaisVagas)
                 definirLimiteJogadores(limiteJogadores + 1)
             }
         }
@@ -932,12 +1012,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun definirLimiteJogadores(novoTotal: Int) {
         if (isSessaoAtiva()) return
+        val anterior = limiteJogadores
         limiteJogadores = novoTotal.coerceIn(
             TunnelProtocol.MIN_TOTAL_PLAYERS,
             TunnelProtocol.MAX_TOTAL_PLAYERS
         )
+        val delta = limiteJogadores - anterior
         prefs.edit().putInt("max_players_v22", limiteJogadores).apply()
         renderizarSeletorCapacidade(travadoEmSessao = false, totalAtivo = limiteJogadores)
+        if (delta != 0) {
+            UiMotion.animateCounterStep(b.txtNumeroJogadores, limiteJogadores.toString(), delta)
+        }
     }
 
     private fun renderizarSeletorCapacidade(travadoEmSessao: Boolean, totalAtivo: Int) {
@@ -999,23 +1084,30 @@ class MainActivity : AppCompatActivity() {
     // TRÊS ABAS PRINCIPAIS: SERVIDORES PÚBLICOS | ENTRAR NA SALA | CRIAR SERVIDOR
     // =========================================================================
 
-    private fun estilizarAbasSelecionadas() {
+    private fun indiceAba(aba: AbaPrincipal): Int = when (aba) {
+        AbaPrincipal.SERVIDORES_PUBLICOS -> 0
+        AbaPrincipal.ENTRAR_SALA -> 1
+        AbaPrincipal.CRIAR_SERVIDOR -> 2
+    }
+
+    private fun estilizarAbasSelecionadas(animar: Boolean = false) {
         val botoes = listOf(
             b.btnModoPublicos to (abaSelecionada == AbaPrincipal.SERVIDORES_PUBLICOS),
             b.btnModoEntrar to (abaSelecionada == AbaPrincipal.ENTRAR_SALA),
             b.btnModoCriar to (abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR)
         )
         for ((botao, selecionado) in botoes) {
-            if (selecionado) {
-                botao.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#1E3152"))
-                botao.setTextColor(Color.parseColor("#F1F5F9"))
-                botao.strokeWidth = dpToPx(1)
-                botao.strokeColor = ColorStateList.valueOf(Color.parseColor("#4738BDF8"))
-            } else {
-                botao.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
-                botao.setTextColor(Color.parseColor("#94A3B8"))
-                botao.strokeWidth = 0
-            }
+            UiMotion.styleSegmentedPill(
+                button = botao,
+                selected = selecionado,
+                activeBg = Color.parseColor("#1E3152"),
+                inactiveBg = Color.TRANSPARENT,
+                activeText = Color.parseColor("#F1F5F9"),
+                inactiveText = Color.parseColor("#94A3B8"),
+                strokeWidthPx = dpToPx(1),
+                strokeColor = Color.parseColor("#4738BDF8"),
+                animate = animar
+            )
         }
     }
 
@@ -1023,6 +1115,7 @@ class MainActivity : AppCompatActivity() {
         if (verificandoSala) return
         if (isSessaoAtiva()) {
             if (novaAba != abaSelecionada) {
+                UiMotion.shakeError(b.grupoModo)
                 toast("Encerre a conexão atual antes de trocar de aba.")
             }
             return
@@ -1030,13 +1123,31 @@ class MainActivity : AppCompatActivity() {
         if (novaAba == abaSelecionada) return
 
         val agora = SystemClock.elapsedRealtime()
-        if (agora - ultimoToqueAbaMs < 260L) return
+        if (agora - ultimoToqueAbaMs < 240L) return
         ultimoToqueAbaMs = agora
 
+        val direcao = indiceAba(novaAba) - indiceAba(abaSelecionada)
         abaSelecionada = novaAba
-        estilizarAbasSelecionadas()
+        if (novaAba == AbaPrincipal.SERVIDORES_PUBLICOS) {
+            ultimaAssinaturaSalasAnimada = ""
+        }
+
+        val botaoAlvo = when (novaAba) {
+            AbaPrincipal.SERVIDORES_PUBLICOS -> b.btnModoPublicos
+            AbaPrincipal.ENTRAR_SALA -> b.btnModoEntrar
+            AbaPrincipal.CRIAR_SERVIDOR -> b.btnModoCriar
+        }
+        UiMotion.hapticTick(botaoAlvo)
+        estilizarAbasSelecionadas(animar = true)
         limparErroVerificacaoLocal()
         atualizarVisibilidadeAbas(ativo = false)
+
+        val cardAlvo = when (novaAba) {
+            AbaPrincipal.SERVIDORES_PUBLICOS -> b.cardServidoresPublicos
+            AbaPrincipal.ENTRAR_SALA -> b.cardEntrarCodigo
+            AbaPrincipal.CRIAR_SERVIDOR -> b.cardHost
+        }
+        UiMotion.animateSharedAxisX(cardAlvo, direcao)
         renderizarEstado(GdroidLanVpnService.currentSnapshot)
     }
 
@@ -1094,11 +1205,14 @@ class MainActivity : AppCompatActivity() {
 
         b.btnCopiarCodigoHost.setOnClickListener {
             copiarTexto("Código da Sala", codigoHostAtual)
+            UiMotion.hapticConfirm(b.btnCopiarCodigoHost)
+            UiMotion.pulseConfirmation(b.txtCodigoHost)
             aplicarCooldownBotaoRapido(b.btnCopiarCodigoHost, 1_500L, "Copiado")
             toast("Código $codigoHostAtual copiado.")
         }
 
         b.btnCompartilharCodigo.setOnClickListener {
+            UiMotion.hapticTick(b.btnCompartilharCodigo)
             aplicarCooldownBotaoRapido(b.btnCompartilharCodigo, 1_500L)
             val anfitriao = contaAtiva?.displayName ?: "Anfitrião"
             val msg = "Sala gLAN de $anfitriao\n" +
@@ -1113,6 +1227,7 @@ class MainActivity : AppCompatActivity() {
 
         b.btnGerarNovoCodigo.setOnClickListener {
             if (isSessaoAtiva()) {
+                UiMotion.shakeError(b.txtCodigoHost)
                 toast("Encerre o servidor atual antes de gerar outro código.")
                 return@setOnClickListener
             }
@@ -1122,6 +1237,8 @@ class MainActivity : AppCompatActivity() {
             codigoHostAtual = RoomCrypto.generateRoomCode()
             prefs.edit().putString("host_room_code", codigoHostAtual).apply()
             b.txtCodigoHost.text = codigoHostAtual
+            UiMotion.hapticConfirm(b.btnGerarNovoCodigo)
+            UiMotion.animateValueRefresh(b.txtCodigoHost)
             cooldownGerarCodigoAteMs = agora + 4_000L
             dispararTickerCooldown()
             toast("Novo código gerado: $codigoHostAtual.")
@@ -1129,12 +1246,16 @@ class MainActivity : AppCompatActivity() {
 
         b.btnCopiarIpHost.setOnClickListener {
             copiarTexto("IP GDroid", TunnelProtocol.HOST_VIRTUAL_IP)
+            UiMotion.hapticConfirm(b.btnCopiarIpHost)
+            UiMotion.pulseConfirmation(b.txtIpParaAmigos)
             aplicarCooldownBotaoRapido(b.btnCopiarIpHost, 1_500L, "Copiado")
             toast("IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado.")
         }
 
         b.btnCopiarIpParaJogo.setOnClickListener {
             copiarTexto("IP GDroid", TunnelProtocol.HOST_VIRTUAL_IP)
+            UiMotion.hapticConfirm(b.btnCopiarIpParaJogo)
+            UiMotion.pulseConfirmation(b.txtIpHostParaCliente)
             aplicarCooldownBotaoRapido(b.btnCopiarIpParaJogo, 1_500L, "Copiado")
             toast("IP ${TunnelProtocol.HOST_VIRTUAL_IP} copiado. Cole no GDroid.")
         }
@@ -1144,6 +1265,8 @@ class MainActivity : AppCompatActivity() {
             if (verificandoSala || segundosRestantes(cooldownLobbyRefreshAteMs, agora) > 0) {
                 return@setOnClickListener
             }
+            UiMotion.hapticTick(b.btnAtualizarLobby)
+            ultimaAssinaturaSalasAnimada = ""
             cooldownLobbyRefreshAteMs = agora + 5_000L
             dispararTickerCooldown()
             lobbyBrowser.refreshNow()
@@ -1162,7 +1285,10 @@ class MainActivity : AppCompatActivity() {
                 limparErroVerificacaoLocal()
                 b.edtCodigoAmigo.setText(norm)
                 b.edtCodigoAmigo.setSelection(norm.length)
+                UiMotion.hapticConfirm(b.btnColarCodigoAmigo)
+                UiMotion.pulseConfirmation(b.edtCodigoAmigo)
             } else {
+                UiMotion.shakeError(b.cardEntrarCodigo)
                 toast("Nenhum código válido encontrado para colar.")
             }
         }
@@ -1326,17 +1452,25 @@ class MainActivity : AppCompatActivity() {
         erroVerificacaoLocal = mensagem
         toast(mensagem)
         renderizarEstado(GdroidLanVpnService.currentSnapshot)
+        val alvoShake = when (abaSelecionada) {
+            AbaPrincipal.ENTRAR_SALA -> b.cardEntrarCodigo
+            AbaPrincipal.CRIAR_SERVIDOR -> b.cardHost
+            AbaPrincipal.SERVIDORES_PUBLICOS -> b.cardServidoresPublicos
+        }
+        UiMotion.shakeError(alvoShake)
     }
 
     private fun renderizarSalasPublicas(
         salas: List<PublicLobbyBrowser.PublicRoomEntry>,
         conectadoAoDiretorio: Boolean
     ) {
+        val sincronizando = salas.isEmpty() && !conectadoAoDiretorio
         b.txtStatusLobby.text = when {
             salas.isNotEmpty() -> if (salas.size == 1) "1 aberto" else "${salas.size} abertos"
             conectadoAoDiretorio -> "Ao vivo"
             else -> "Sincronizando"
         }
+        UiMotion.setBreathingPulse(b.txtStatusLobby, sincronizando)
 
         val termoBusca = normalizarParaBusca(filtroPesquisaServidor)
         val salasFiltradas = if (termoBusca.isBlank()) {
@@ -1350,6 +1484,7 @@ class MainActivity : AppCompatActivity() {
 
         b.containerSalasPublicas.removeAllViews()
         if (salasFiltradas.isEmpty()) {
+            ultimaAssinaturaSalasAnimada = ""
             b.txtSemSalasPublicas.visibility = View.VISIBLE
             b.txtSemSalasPublicas.text = when {
                 salas.isNotEmpty() && termoBusca.isNotBlank() ->
@@ -1365,6 +1500,11 @@ class MainActivity : AppCompatActivity() {
         val bloqueadoPorCooldownOuBusca = verificandoSala ||
             segundosRestantes(cooldownPrincipalAteMs) > 0 ||
             isSessaoAtiva()
+
+        val assinaturaAtual = salasFiltradas.joinToString("|") { it.roomCode }
+        val deveAnimarEntrada = (assinaturaAtual != ultimaAssinaturaSalasAnimada)
+        ultimaAssinaturaSalasAnimada = assinaturaAtual
+        val viewsCriadas = ArrayList<View>(salasFiltradas.size)
 
         b.txtSemSalasPublicas.visibility = View.GONE
         for (sala in salasFiltradas) {
@@ -1401,12 +1541,24 @@ class MainActivity : AppCompatActivity() {
                 item.btnEntrarSalaPublica.text = "Entrar"
                 item.btnEntrarSalaPublica.isEnabled = !bloqueadoPorCooldownOuBusca
                 item.btnEntrarSalaPublica.alpha = if (bloqueadoPorCooldownOuBusca) 0.45f else 1.0f
+                UiMotion.attachTactilePress(item.btnEntrarSalaPublica)
                 item.btnEntrarSalaPublica.setOnClickListener {
+                    UiMotion.hapticTick(item.btnEntrarSalaPublica)
                     verificarExistenciaEEntrar(sala.roomCode, entradaSalaPublica = sala)
                 }
             }
 
             b.containerSalasPublicas.addView(item.root)
+            viewsCriadas.add(item.root)
+        }
+
+        if (deveAnimarEntrada) {
+            UiMotion.animateStaggeredEntrance(
+                viewsCriadas,
+                startDelayMs = 15L,
+                stepDelayMs = 40L,
+                distanceDp = 12f
+            )
         }
     }
 
@@ -1500,18 +1652,24 @@ class MainActivity : AppCompatActivity() {
         val restPrincipal = segundosRestantes(cooldownPrincipalAteMs, agora)
 
         if (!ativo && abaSelecionada == AbaPrincipal.SERVIDORES_PUBLICOS && !verificandoSala && restPrincipal == 0) {
+            UiMotion.setBreathingPulse(b.btnAcaoPrincipal, false)
             b.btnAcaoPrincipal.visibility = View.GONE
         } else {
             b.btnAcaoPrincipal.visibility = View.VISIBLE
             when {
                 verificandoSala -> {
                     b.btnAcaoPrincipal.isEnabled = false
-                    b.btnAcaoPrincipal.alpha = 0.75f
                     b.btnAcaoPrincipal.text = "Verificando sala..."
-                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2589F5"))
-                    b.btnAcaoPrincipal.setTextColor(Color.WHITE)
+                    UiMotion.morphPillColors(
+                        view = b.btnAcaoPrincipal,
+                        targetBg = Color.parseColor("#2589F5"),
+                        targetText = Color.WHITE,
+                        animate = true
+                    )
+                    UiMotion.setBreathingPulse(b.btnAcaoPrincipal, true)
                 }
                 restPrincipal > 0 -> {
+                    UiMotion.setBreathingPulse(b.btnAcaoPrincipal, false)
                     b.btnAcaoPrincipal.isEnabled = false
                     b.btnAcaoPrincipal.alpha = 0.65f
                     b.btnAcaoPrincipal.text = if (ativo) {
@@ -1520,23 +1678,37 @@ class MainActivity : AppCompatActivity() {
                         "Aguarde ${restPrincipal}s..."
                     }
                     val cor = if (ativo) "#EF4444" else "#2589F5"
-                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor(cor))
-                    b.btnAcaoPrincipal.setTextColor(Color.WHITE)
+                    UiMotion.morphPillColors(
+                        view = b.btnAcaoPrincipal,
+                        targetBg = Color.parseColor(cor),
+                        targetText = Color.WHITE,
+                        animate = true
+                    )
                 }
                 ativo -> {
+                    UiMotion.setBreathingPulse(b.btnAcaoPrincipal, false)
                     b.btnAcaoPrincipal.isEnabled = true
                     b.btnAcaoPrincipal.alpha = 1.0f
                     b.btnAcaoPrincipal.text = if (snap.isHost) "Encerrar Servidor" else "Sair da Sala"
-                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#EF4444"))
-                    b.btnAcaoPrincipal.setTextColor(Color.WHITE)
+                    UiMotion.morphPillColors(
+                        view = b.btnAcaoPrincipal,
+                        targetBg = Color.parseColor("#EF4444"),
+                        targetText = Color.WHITE,
+                        animate = true
+                    )
                 }
                 else -> {
+                    UiMotion.setBreathingPulse(b.btnAcaoPrincipal, false)
                     b.btnAcaoPrincipal.isEnabled = true
                     b.btnAcaoPrincipal.alpha = 1.0f
                     val ehCriar = (abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR)
                     b.btnAcaoPrincipal.text = if (ehCriar) "Iniciar Servidor" else "Conectar na Sala"
-                    b.btnAcaoPrincipal.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2589F5"))
-                    b.btnAcaoPrincipal.setTextColor(Color.WHITE)
+                    UiMotion.morphPillColors(
+                        view = b.btnAcaoPrincipal,
+                        targetBg = Color.parseColor("#2589F5"),
+                        targetText = Color.WHITE,
+                        animate = true
+                    )
                 }
             }
         }
@@ -1584,11 +1756,13 @@ class MainActivity : AppCompatActivity() {
         if (ativo) {
             if (snap.isHost && abaSelecionada != AbaPrincipal.CRIAR_SERVIDOR) {
                 abaSelecionada = AbaPrincipal.CRIAR_SERVIDOR
-                estilizarAbasSelecionadas()
+                estilizarAbasSelecionadas(animar = true)
             } else if (!snap.isHost && abaSelecionada == AbaPrincipal.CRIAR_SERVIDOR) {
                 abaSelecionada = AbaPrincipal.SERVIDORES_PUBLICOS
-                estilizarAbasSelecionadas()
+                estilizarAbasSelecionadas(animar = true)
             }
+        } else {
+            ultimaAssinaturaMembrosAnimada = ""
         }
 
         atualizarVisibilidadeAbas(ativo)
@@ -1598,44 +1772,93 @@ class MainActivity : AppCompatActivity() {
         val badgeLocal = badgeErroLocal
 
         if (!ativo && erroLocal != null && badgeLocal != null) {
+            val chave = "ERR:$badgeLocal"
+            val mudou = (chave != ultimaChaveBadgeStatus)
+            ultimaChaveBadgeStatus = chave
             b.txtBadgeStatus.text = badgeLocal
-            b.txtBadgeStatus.setTextColor(Color.parseColor("#EF4444"))
-            b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#24EF4444"))
+            UiMotion.setBreathingPulse(b.txtBadgeStatus, false)
+            UiMotion.morphPillColors(
+                view = b.txtBadgeStatus,
+                targetBg = Color.parseColor("#24EF4444"),
+                targetText = Color.parseColor("#EF4444"),
+                animate = mudou,
+                pop = mudou
+            )
 
             b.txtDetalheStatus.text = erroLocal
             b.txtDetalheStatus.setTextColor(Color.parseColor("#EF4444"))
-            b.txtDetalheStatus.visibility = View.VISIBLE
+            UiMotion.setPanelVisible(b.txtDetalheStatus, true, animate = mudou)
         } else {
+            val chave = "PHASE:${snap.phase}:${snap.isPublicRoom}"
+            val mudou = (chave != ultimaChaveBadgeStatus)
+            ultimaChaveBadgeStatus = chave
+
+            val emEsperaOuHandshake = (
+                snap.phase == GdroidLanVpnService.StatusPhase.CONNECTING ||
+                snap.phase == GdroidLanVpnService.StatusPhase.WAITING_FRIEND ||
+                snap.phase == GdroidLanVpnService.StatusPhase.RECONNECTING
+            )
+            UiMotion.setBreathingPulse(b.txtBadgeStatus, emEsperaOuHandshake)
+
             when (snap.phase) {
                 GdroidLanVpnService.StatusPhase.OFFLINE -> {
                     b.txtBadgeStatus.text = "OFFLINE"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#94A3B8"))
-                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2494A3B8"))
+                    UiMotion.morphPillColors(
+                        view = b.txtBadgeStatus,
+                        targetBg = Color.parseColor("#2494A3B8"),
+                        targetText = Color.parseColor("#94A3B8"),
+                        animate = mudou
+                    )
                 }
                 GdroidLanVpnService.StatusPhase.CONNECTING -> {
                     b.txtBadgeStatus.text = "CONECTANDO"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#F59E0B"))
-                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#24F59E0B"))
+                    UiMotion.morphPillColors(
+                        view = b.txtBadgeStatus,
+                        targetBg = Color.parseColor("#24F59E0B"),
+                        targetText = Color.parseColor("#F59E0B"),
+                        animate = mudou
+                    )
                 }
                 GdroidLanVpnService.StatusPhase.WAITING_FRIEND -> {
                     b.txtBadgeStatus.text = if (snap.isPublicRoom) "PÚBLICA" else "PRIVADA"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#38BDF8"))
-                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2438BDF8"))
+                    UiMotion.morphPillColors(
+                        view = b.txtBadgeStatus,
+                        targetBg = Color.parseColor("#2438BDF8"),
+                        targetText = Color.parseColor("#38BDF8"),
+                        animate = mudou
+                    )
                 }
                 GdroidLanVpnService.StatusPhase.ONLINE -> {
                     b.txtBadgeStatus.text = "CONECTADO"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#10B981"))
-                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2410B981"))
+                    if (mudou) {
+                        UiMotion.hapticConfirm(b.txtBadgeStatus)
+                    }
+                    UiMotion.morphPillColors(
+                        view = b.txtBadgeStatus,
+                        targetBg = Color.parseColor("#2410B981"),
+                        targetText = Color.parseColor("#10B981"),
+                        animate = mudou,
+                        pop = mudou
+                    )
                 }
                 GdroidLanVpnService.StatusPhase.RECONNECTING -> {
                     b.txtBadgeStatus.text = "RECONECTANDO"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#F59E0B"))
-                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#24F59E0B"))
+                    UiMotion.morphPillColors(
+                        view = b.txtBadgeStatus,
+                        targetBg = Color.parseColor("#24F59E0B"),
+                        targetText = Color.parseColor("#F59E0B"),
+                        animate = mudou
+                    )
                 }
                 GdroidLanVpnService.StatusPhase.ERROR -> {
                     b.txtBadgeStatus.text = "ERRO"
-                    b.txtBadgeStatus.setTextColor(Color.parseColor("#EF4444"))
-                    b.txtBadgeStatus.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#24EF4444"))
+                    UiMotion.morphPillColors(
+                        view = b.txtBadgeStatus,
+                        targetBg = Color.parseColor("#24EF4444"),
+                        targetText = Color.parseColor("#EF4444"),
+                        animate = mudou,
+                        pop = mudou
+                    )
                 }
             }
 
@@ -1654,7 +1877,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        b.painelSessaoAtiva.visibility = if (ativo) View.VISIBLE else View.GONE
+        val acabouDeAtivar = ativo && !sessaoAtivaAnteriormente
+        sessaoAtivaAnteriormente = ativo
+
+        if (acabouDeAtivar) {
+            UiMotion.setPanelVisible(b.painelSessaoAtiva, true, animate = true)
+        } else if (!ativo) {
+            b.painelSessaoAtiva.visibility = View.GONE
+        } else {
+            b.painelSessaoAtiva.visibility = View.VISIBLE
+        }
         b.cardEstatisticasRede.visibility = if (ativo && prefMostrarTrafego) View.VISIBLE else View.GONE
         b.cardComoUsar.visibility = if (ativo) View.GONE else View.VISIBLE
         b.btnGerarNovoCodigo.visibility = if (ativo) View.INVISIBLE else View.VISIBLE
@@ -1701,10 +1933,16 @@ class MainActivity : AppCompatActivity() {
     private fun renderizarListaParticipantes(snap: GdroidLanVpnService.TunnelSnapshot) {
         b.containerParticipantes.removeAllViews()
         if (snap.members.isEmpty()) {
+            ultimaAssinaturaMembrosAnimada = ""
             b.txtSemParticipantes.visibility = View.VISIBLE
             b.txtSemParticipantes.text = "Sincronizando sala..."
             return
         }
+
+        val assinaturaMembros = snap.members.joinToString("|") { "${it.nodeId}:${it.isHost}" }
+        val deveAnimarEntrada = (assinaturaMembros != ultimaAssinaturaMembrosAnimada)
+        ultimaAssinaturaMembrosAnimada = assinaturaMembros
+        val linhasCriadas = ArrayList<View>(snap.members.size)
 
         b.txtSemParticipantes.visibility = View.GONE
         for (membro in snap.members) {
@@ -1742,6 +1980,7 @@ class MainActivity : AppCompatActivity() {
                     row.txtPingParticipante.text = "..."
                     row.txtPingParticipante.setTextColor(Color.parseColor("#F59E0B"))
                     row.viewStatusDot.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#F59E0B"))
+                    UiMotion.setBreathingPulse(row.viewStatusDot, true)
                 }
                 membro.pingMs > 0L -> {
                     val cor = corPorPing(membro.pingMs)
@@ -1758,7 +1997,9 @@ class MainActivity : AppCompatActivity() {
 
             if (snap.isHost && !membro.isHost) {
                 row.btnRemoverParticipante.visibility = View.VISIBLE
+                UiMotion.attachTactilePress(row.btnRemoverParticipante)
                 row.btnRemoverParticipante.setOnClickListener {
+                    UiMotion.hapticTick(row.btnRemoverParticipante)
                     confirmarExpulsaoParticipante(membro, row.btnRemoverParticipante)
                 }
             } else {
@@ -1766,6 +2007,16 @@ class MainActivity : AppCompatActivity() {
             }
 
             b.containerParticipantes.addView(row.root)
+            linhasCriadas.add(row.root)
+        }
+
+        if (deveAnimarEntrada) {
+            UiMotion.animateStaggeredEntrance(
+                linhasCriadas,
+                startDelayMs = 15L,
+                stepDelayMs = 38L,
+                distanceDp = 10f
+            )
         }
     }
 
