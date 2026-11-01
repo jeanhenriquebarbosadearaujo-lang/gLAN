@@ -62,6 +62,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_AUTO_PING_LOBBY = "pref_auto_ping_lobby"
         private const val PREF_ROOM_ALERTS = "pref_room_join_leave_alerts"
         private const val PREF_AUTO_RECONNECT = "pref_auto_reconnect_net"
+        private const val PREF_PROTECT_PUBLIC_IP = "pref_protect_public_ip"
     }
 
     private lateinit var b: ActivityMainBinding
@@ -77,6 +78,7 @@ class MainActivity : AppCompatActivity() {
     private var limiteJogadores = TunnelProtocol.MAX_TOTAL_PLAYERS
     private var filtroPesquisaServidor = ""
 
+    private var prefProtegerIpPublico = true
     private var prefReconectarAuto = true
     private var prefMostrarTrafego = true
     private var prefPingLobby = true
@@ -88,6 +90,8 @@ class MainActivity : AppCompatActivity() {
 
     private var aguardandoPermissaoParaHost = true
     private var codigoPendenteConexao = ""
+    private var protegerIpPendenteConexao = false
+    private var pubKeyHostEsperadaPendente = ""
 
     private var verificandoSala = false
     private var badgeErroLocal: String? = null
@@ -191,7 +195,12 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             if (res.resultCode == Activity.RESULT_OK) {
                 iniciarCooldownPrincipal(3)
-                dispararServicoVpn(aguardandoPermissaoParaHost, codigoPendenteConexao)
+                dispararServicoVpn(
+                    asHost = aguardandoPermissaoParaHost,
+                    code = codigoPendenteConexao,
+                    protectIp = protegerIpPendenteConexao,
+                    expectedHostPubKeyB64 = pubKeyHostEsperadaPendente
+                )
             } else {
                 toast("Autorize a permissão de VPN do Android para ativar a sala.")
             }
@@ -222,6 +231,7 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
+        prefProtegerIpPublico = prefs.getBoolean(PREF_PROTECT_PUBLIC_IP, true)
         prefReconectarAuto = prefs.getBoolean(PREF_AUTO_RECONNECT, true)
         prefMostrarTrafego = prefs.getBoolean(PREF_SHOW_TRAFFIC, true)
         prefPingLobby = prefs.getBoolean(PREF_AUTO_PING_LOBBY, true)
@@ -332,9 +342,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.2"
+            pInfo.versionName ?: "3.3"
         } catch (_: Exception) {
-            "3.2"
+            "3.3"
         }
     }
 
@@ -599,10 +609,24 @@ class MainActivity : AppCompatActivity() {
         bindingConfiguracoesAberto = cfg
 
         atualizarStatusBateriaNoDialogo(cfg)
+        cfg.switchProtegerIpPublico.isChecked = prefProtegerIpPublico
         cfg.switchReconectarAuto.isChecked = prefReconectarAuto
         cfg.switchMostrarTrafego.isChecked = prefMostrarTrafego
         cfg.switchPingLobby.isChecked = prefPingLobby
         cfg.switchAvisosSala.isChecked = prefAvisosSala
+
+        if (isSessaoAtiva()) {
+            cfg.switchProtegerIpPublico.isEnabled = false
+            cfg.switchProtegerIpPublico.alpha = 0.55f
+            cfg.txtDescProtegerIpPublico.text =
+                "Usa exclusivamente a Ponte TLS ao criar ou entrar em salas públicas, mantendo seu IP real oculto. (Encerre a sala ativa para alterar.)"
+        } else {
+            cfg.switchProtegerIpPublico.setOnCheckedChangeListener { _, isChecked ->
+                prefProtegerIpPublico = isChecked
+                prefs.edit().putBoolean(PREF_PROTECT_PUBLIC_IP, isChecked).apply()
+                atualizarAvisoProtecaoIpHost()
+            }
+        }
 
         cfg.btnAbrirAjusteBateria.setOnClickListener {
             abrirAjustesDeBateriaDoSistema()
@@ -658,9 +682,9 @@ class MainActivity : AppCompatActivity() {
             "2. Uso da Permissão de VPN (Split-Tunnel)\n" +
             "A interface VPN do Android é usada exclusivamente para rotear a sub-rede virtual privada 10.10.0.0/24 entre os jogadores da mesma sala. " +
             "O restante do tráfego de internet do seu aparelho não é interceptado, armazenado nem redirecionado pelo gLAN.\n\n" +
-            "3. Criptografia e Dados de Sessão\n" +
+            "3. Criptografia, Proteção de IP e Dados de Sessão\n" +
             "Os pacotes da sala utilizam criptografia ponta a ponta (ECDH P-256 + AES-128-GCM) e assinatura digital ECDSA. " +
-            "Endereços de rede temporários são utilizados apenas em memória durante a sessão ativa para conectar os participantes e descartados imediatamente ao sair da sala."
+            "Em Salas Públicas com Proteção de IP ativa, toda a comunicação ocorre exclusivamente via Ponte TLS, sem transmitir nem expor seu endereço IP real aos outros participantes."
 
         MaterialAlertDialogBuilder(this)
             .setTitle("Política de Privacidade")
@@ -696,7 +720,7 @@ class MainActivity : AppCompatActivity() {
             "Versão do Aplicativo:\n" +
             "gLAN v$versao\n\n" +
             "Arquitetura:\n" +
-            "Rede Virtual P2P com Criptografia E2EE (ECDH P-256 + ECDSA + AES-128-GCM) e Firewall Interno."
+            "Rede Virtual LAN com Criptografia E2EE (ECDH P-256 + ECDSA + AES-128-GCM), Proteção de IP via Ponte TLS e Firewall Interno."
 
         MaterialAlertDialogBuilder(this)
             .setTitle("Créditos e Versão")
@@ -794,9 +818,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun atualizarAvisoProtecaoIpHost() {
+        if (!salaPublicaSelecionada) {
+            b.txtInfoProtecaoIpPublica.visibility = View.GONE
+            return
+        }
+        b.txtInfoProtecaoIpPublica.visibility = View.VISIBLE
+        if (prefProtegerIpPublico) {
+            b.txtInfoProtecaoIpPublica.text =
+                "Proteção de IP ativa: somente Ponte TLS (seu IP real fica oculto)."
+            b.txtInfoProtecaoIpPublica.setTextColor(Color.parseColor("#00E676"))
+        } else {
+            b.txtInfoProtecaoIpPublica.text =
+                "Modo P2P híbrido ativo (ative Proteção de IP em Configurações para ocultar seu IP)."
+            b.txtInfoProtecaoIpPublica.setTextColor(Color.parseColor("#94A3B8"))
+        }
+    }
+
     private fun configurarVisibilidadeHost() {
         b.grupoVisibilidade.check(if (salaPublicaSelecionada) R.id.btnSalaPublica else R.id.btnSalaPrivada)
         b.layoutNomeSalaPublica.visibility = if (salaPublicaSelecionada) View.VISIBLE else View.GONE
+        atualizarAvisoProtecaoIpHost()
 
         b.grupoVisibilidade.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked) return@addOnButtonCheckedListener
@@ -811,6 +853,7 @@ class MainActivity : AppCompatActivity() {
             salaPublicaSelecionada = (checkedId == R.id.btnSalaPublica)
             prefs.edit().putBoolean("host_is_public", salaPublicaSelecionada).apply()
             b.layoutNomeSalaPublica.visibility = if (salaPublicaSelecionada) View.VISIBLE else View.GONE
+            atualizarAvisoProtecaoIpHost()
         }
 
         b.edtNomeSalaPublica.addTextChangedListener(object : TextWatcher {
@@ -1136,7 +1179,12 @@ class MainActivity : AppCompatActivity() {
                         val tituloDigitado = b.edtNomeSalaPublica.text?.toString().orEmpty()
                         if (valResSalaRecusada(tituloDigitado)) return@setOnClickListener
                     }
-                    solicitarVpnEIniciar(asHost = true, code = codigoHostAtual)
+                    solicitarVpnEIniciar(
+                        asHost = true,
+                        code = codigoHostAtual,
+                        protectIp = salaPublicaSelecionada && prefProtegerIpPublico,
+                        expectedHostPubKeyB64 = ""
+                    )
                 }
                 AbaPrincipal.ENTRAR_SALA -> {
                     val digitado = RoomCrypto.normalizeRoomCode(b.edtCodigoAmigo.text?.toString().orEmpty())
@@ -1188,7 +1236,10 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun verificarExistenciaEEntrar(codigoNormalizado: String) {
+    private fun verificarExistenciaEEntrar(
+        codigoNormalizado: String,
+        entradaSalaPublica: PublicLobbyBrowser.PublicRoomEntry? = null
+    ) {
         if (verificandoSala || isSessaoAtiva()) return
         val agora = SystemClock.elapsedRealtime()
         if (segundosRestantes(cooldownPrincipalAteMs, agora) > 0) return
@@ -1197,8 +1248,14 @@ class MainActivity : AppCompatActivity() {
         limparErroVerificacaoLocal()
         renderizarEstado(GdroidLanVpnService.currentSnapshot)
 
+        val salaConhecida = entradaSalaPublica ?: lobbyBrowser.findKnownPublicRoom(codigoNormalizado)
+        val chaveHostConhecida = salaConhecida?.ownerPubKeyB64.orEmpty()
         val uid = contaAtiva?.accountUid ?: 0L
-        lobbyBrowser.probeRoom(codigoNormalizado, uid) { resultado ->
+        lobbyBrowser.probeRoom(
+            rawCode = codigoNormalizado,
+            accountUid = uid,
+            expectedHostPubKeyB64 = chaveHostConhecida.ifBlank { null }
+        ) { resultado ->
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 verificandoSala = false
@@ -1206,7 +1263,16 @@ class MainActivity : AppCompatActivity() {
                 when (resultado) {
                     is PublicLobbyBrowser.ProbeResult.Available -> {
                         limparErroVerificacaoLocal()
-                        solicitarVpnEIniciar(asHost = false, code = codigoNormalizado)
+                        val salaAtivaAgora = entradaSalaPublica ?: lobbyBrowser.findKnownPublicRoom(codigoNormalizado) ?: salaConhecida
+                        val ehSalaPublica = (salaAtivaAgora != null)
+                        val protegerIpSessao = (prefProtegerIpPublico && ehSalaPublica) ||
+                            (salaAtivaAgora?.ipProtected == true)
+                        solicitarVpnEIniciar(
+                            asHost = false,
+                            code = codigoNormalizado,
+                            protectIp = protegerIpSessao,
+                            expectedHostPubKeyB64 = salaAtivaAgora?.ownerPubKeyB64 ?: chaveHostConhecida
+                        )
                     }
                     is PublicLobbyBrowser.ProbeResult.NotFound -> {
                         iniciarCooldownPrincipal(3)
@@ -1298,7 +1364,11 @@ class MainActivity : AppCompatActivity() {
         for (sala in salasFiltradas) {
             val item = ItemPublicRoomBinding.inflate(layoutInflater, b.containerSalasPublicas, false)
             item.txtTituloSalaPublica.text = sala.roomTitle
-            item.txtSubtituloSalaPublica.text = "Host: ${sala.hostName} • IP: ${TunnelProtocol.HOST_VIRTUAL_IP}"
+            item.txtSubtituloSalaPublica.text = if (sala.ipProtected) {
+                "Host: ${sala.hostName} • IP Oculto • ${TunnelProtocol.HOST_VIRTUAL_IP}"
+            } else {
+                "Host: ${sala.hostName} • IP: ${TunnelProtocol.HOST_VIRTUAL_IP}"
+            }
             item.txtVagasSalaPublica.text = "${sala.currentPlayers} / ${sala.maxPlayers}"
 
             if (prefPingLobby) {
@@ -1326,7 +1396,7 @@ class MainActivity : AppCompatActivity() {
                 item.btnEntrarSalaPublica.isEnabled = !bloqueadoPorCooldownOuBusca
                 item.btnEntrarSalaPublica.alpha = if (bloqueadoPorCooldownOuBusca) 0.45f else 1.0f
                 item.btnEntrarSalaPublica.setOnClickListener {
-                    verificarExistenciaEEntrar(sala.roomCode)
+                    verificarExistenciaEEntrar(sala.roomCode, entradaSalaPublica = sala)
                 }
             }
 
@@ -1334,19 +1404,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun solicitarVpnEIniciar(asHost: Boolean, code: String) {
+    private fun solicitarVpnEIniciar(
+        asHost: Boolean,
+        code: String,
+        protectIp: Boolean,
+        expectedHostPubKeyB64: String
+    ) {
         aguardandoPermissaoParaHost = asHost
         codigoPendenteConexao = code
+        protegerIpPendenteConexao = protectIp
+        pubKeyHostEsperadaPendente = expectedHostPubKeyB64
         val prep = VpnService.prepare(this)
         if (prep != null) {
             vpnPermissionLauncher.launch(prep)
         } else {
             iniciarCooldownPrincipal(3)
-            dispararServicoVpn(asHost, code)
+            dispararServicoVpn(
+                asHost = asHost,
+                code = code,
+                protectIp = protectIp,
+                expectedHostPubKeyB64 = expectedHostPubKeyB64
+            )
         }
     }
 
-    private fun dispararServicoVpn(asHost: Boolean, code: String) {
+    private fun dispararServicoVpn(
+        asHost: Boolean,
+        code: String,
+        protectIp: Boolean,
+        expectedHostPubKeyB64: String
+    ) {
         lobbyBrowser.stop()
         ultimoTotalBytes = 0L
         ultimoTimestampBytesMs = 0L
@@ -1362,6 +1449,10 @@ class MainActivity : AppCompatActivity() {
             putExtra(GdroidLanVpnService.EXTRA_IS_PUBLIC, asHost && salaPublicaSelecionada)
             putExtra(GdroidLanVpnService.EXTRA_ROOM_TITLE, obterTituloSalaAtual())
             putExtra(GdroidLanVpnService.EXTRA_AUTO_RECONNECT, prefReconectarAuto)
+            putExtra(GdroidLanVpnService.EXTRA_PROTECT_IP, protectIp)
+            if (!asHost && expectedHostPubKeyB64.isNotBlank()) {
+                putExtra(GdroidLanVpnService.EXTRA_EXPECTED_HOST_PUBKEY, expectedHostPubKeyB64)
+            }
         }
         ContextCompat.startForegroundService(this, i)
     }

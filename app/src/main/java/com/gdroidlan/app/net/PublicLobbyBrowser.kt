@@ -38,7 +38,8 @@ class PublicLobbyBrowser(
         val maxPlayers: Int,
         val ownerPubKeyB64: String,
         val lastSeenAtMs: Long,
-        val pingMs: Long = -1L
+        val pingMs: Long = -1L,
+        val ipProtected: Boolean = false
     ) {
         val isFull: Boolean get() = currentPlayers >= maxPlayers
     }
@@ -68,6 +69,17 @@ class PublicLobbyBrowser(
             ts: Long
         ): ByteArray = "v26|open|$code|$title|$host|$cur|$max|$ts".toByteArray(Charsets.UTF_8)
 
+        private fun canonicalOpenSignDataV33(
+            code: String,
+            title: String,
+            host: String,
+            cur: Int,
+            max: Int,
+            ts: Long,
+            ipProtected: Boolean
+        ): ByteArray = "v33|open|$code|$title|$host|$cur|$max|$ts|${if (ipProtected) 1 else 0}"
+            .toByteArray(Charsets.UTF_8)
+
         private fun canonicalCloseSignData(code: String, ts: Long): ByteArray =
             "v26|close|$code|$ts".toByteArray(Charsets.UTF_8)
 
@@ -77,7 +89,8 @@ class PublicLobbyBrowser(
             roomTitle: String,
             hostName: String,
             currentPlayers: Int,
-            maxPlayers: Int
+            maxPlayers: Int,
+            ipProtected: Boolean = true
         ): ByteArray {
             val cleanCode = RoomCrypto.normalizeRoomCode(roomCode)
             val cleanHost = RoomCrypto.cleanSafeText(hostName, 24).ifBlank { "Anfitrião" }
@@ -86,6 +99,9 @@ class PublicLobbyBrowser(
             val cur = currentPlayers.coerceIn(1, max)
             val ts = System.currentTimeMillis()
             val sig = identity.signToBase64(canonicalOpenSignData(cleanCode, cleanTitle, cleanHost, cur, max, ts))
+            val sig33 = identity.signToBase64(
+                canonicalOpenSignDataV33(cleanCode, cleanTitle, cleanHost, cur, max, ts, ipProtected)
+            )
 
             val json = JSONObject().apply {
                 put("open", true)
@@ -97,6 +113,8 @@ class PublicLobbyBrowser(
                 put("ts", ts)
                 put("pub", identity.publicKeyBase64)
                 put("sig", sig)
+                put("ipProt", ipProtected)
+                put("sig33", sig33)
                 UpdateNotifier.getBuiltInVerifiedRelease()?.let { rel ->
                     put("vCode", rel.versionCode)
                     put("vName", rel.versionName)
@@ -431,6 +449,11 @@ class PublicLobbyBrowser(
         pruneStaleRoomsAndDispatch(forceDispatch = true)
     }
 
+    fun findKnownPublicRoom(rawCode: String): PublicRoomEntry? {
+        val code = RoomCrypto.normalizeRoomCode(rawCode)
+        return roomsMap[code]
+    }
+
     fun removeRoomImmediately(rawCode: String) {
         val code = RoomCrypto.normalizeRoomCode(rawCode)
         pingCacheByCode.remove(code)
@@ -443,6 +466,7 @@ class PublicLobbyBrowser(
     fun probeRoom(
         rawCode: String,
         accountUid: Long,
+        expectedHostPubKeyB64: String? = null,
         timeoutMs: Long = 2_300L,
         onResult: (ProbeResult) -> Unit
     ) {
@@ -451,6 +475,10 @@ class PublicLobbyBrowser(
             onResult(ProbeResult.NotFound)
             return
         }
+
+        val expectedHostKey = expectedHostPubKeyB64
+            ?.takeIf { it.isNotBlank() }
+            ?.let { RoomCrypto.decodeEcPublicKey(it) }
 
         if (!active.get()) {
             start()
@@ -509,7 +537,7 @@ class PublicLobbyBrowser(
                             }
                         }
                         TunnelProtocol.TYPE_ROSTER -> {
-                            val roster = TunnelProtocol.parseRoster(plain, expectedHostKey = null)
+                            val roster = TunnelProtocol.parseRoster(plain, expectedHostKey = expectedHostKey)
                             if (roster != null) {
                                 val cur = roster.members.size
                                 val mapped = if (cur >= roster.maxPlayers) {
@@ -668,6 +696,14 @@ class PublicLobbyBrowser(
                 }
             }
 
+            val rawIpProt = j.optBoolean("ipProt", false)
+            val sig33B64 = j.optString("sig33", "")
+            val verifiedIpProt = sig33B64.isNotBlank() && RoomCrypto.verifySignature(
+                pubKey,
+                canonicalOpenSignDataV33(code, title, host, cur, max, ts, rawIpProt),
+                sig33B64
+            ) && rawIpProt
+
             val cachedPing = if (autoPingEnabled) (pingCacheByCode[code] ?: existing?.pingMs ?: -1L) else -1L
             roomsMap[code] = PublicRoomEntry(
                 roomCode = code,
@@ -677,7 +713,8 @@ class PublicLobbyBrowser(
                 maxPlayers = max,
                 ownerPubKeyB64 = pubB64,
                 lastSeenAtMs = now,
-                pingMs = cachedPing
+                pingMs = cachedPing,
+                ipProtected = verifiedIpProt
             )
             dispatchSnapshot()
         } catch (_: Exception) { }

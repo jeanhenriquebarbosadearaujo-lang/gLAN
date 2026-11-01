@@ -19,6 +19,7 @@
 - **Reconexão Automática em Oscilação de Rede (`Wi-Fi <-> 4G/5G`):** monitora mudanças na rede física do Android, refaz STUN e canal TLS automaticamente e preserva o jogador na **mesma sala e no mesmo IP `10.10.0.x`** sem derrubar a partida.
 - **Ping em Tempo Real (`ms`):** medição contínua da latência nos servidores públicos e em cada participante conectado na sala.
 - **Menu Lateral (Gaveta):** acesso organizado a **Perfil** (alteração de nome com filtro anti-+18/ofensas e verificação de nome único), **Configurações** (manter ativo em segundo plano sem restrição de bateria, reconexão automática Wi-Fi/4G, estatísticas de tráfego `KB/s`, ping automático na lista e avisos da sala), **Política de Privacidade**, **Termos de Serviço** e **Créditos**.
+- **Proteção de IP em Salas Públicas (Somente Ponte TLS):** oculta o endereço IP real do anfitrião e dos participantes em salas públicas, roteando toda a sessão via Ponte TLS sem expor endpoints UDP/STUN, além de pré-fixar criptograficamente a chave pública do host e aplicar proteção anti-flood por convidado.
 - **Segurança Reforçada:** ECDH P-256 par-a-par + assinatura digital ECDSA P-256 + AES-128-GCM com janela anti-replay + Firewall interno IPv4 + TLS 1.2/1.3 obrigatório.
 
 ---
@@ -27,4 +28,4 @@
 
 - **Criador:** Jean Henrique
 - **TikTok:** `.memze`
-- **Versão Atual:** `3.2`
+- **Versão Atual:** `3.3`
