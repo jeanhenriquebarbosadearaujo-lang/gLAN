@@ -42,7 +42,7 @@ object TunnelProtocol {
     const val PROBE_STATUS_FULL = 1
     const val PROBE_STATUS_BLOCKED = 2
 
-    private const val MAX_SIGN_SKEW_MS = 180_000L
+    private const val MAX_SIGN_SKEW_MS = 24L * 60L * 60L * 1000L
 
     // Portas sensíveis do sistema Android bloqueadas no firewall interno da rede virtual
     private val BLOCKED_SYSTEM_PORTS = setOf(

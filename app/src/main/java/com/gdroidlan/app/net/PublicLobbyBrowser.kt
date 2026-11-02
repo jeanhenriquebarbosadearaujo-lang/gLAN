@@ -58,8 +58,8 @@ class PublicLobbyBrowser(
 
     companion object {
         const val LOBBY_TOPIC = "glan/v26/lobby/live"
-        private const val STALE_TIMEOUT_MS = 8_500L
-        private const val MAX_CLOCK_SKEW_MS = 180_000L
+        private const val STALE_TIMEOUT_MS = 22_000L
+        private const val MAX_CLOCK_SKEW_MS = 24L * 60L * 60L * 1000L
         private val lobbyCipher by lazy { RoomCrypto.SessionCipher("GLANPUBLICLOBBYV26") }
         private val probeRng = SecureRandom()
 

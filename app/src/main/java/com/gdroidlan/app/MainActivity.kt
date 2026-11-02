@@ -394,6 +394,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        GdroidLanVpnService.onManualPongToast = null
+        GdroidLanVpnService.onModerationEventToast = null
         bindingConfiguracoesAberto = null
         uiHandler.removeCallbacksAndMessages(null)
         toastAtual?.cancel()
@@ -403,9 +405,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.9"
+            pInfo.versionName ?: "4.0"
         } catch (_: Exception) {
-            "3.9"
+            "4.0"
         }
     }
 

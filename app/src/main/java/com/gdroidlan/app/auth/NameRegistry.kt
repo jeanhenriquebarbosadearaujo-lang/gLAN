@@ -136,7 +136,8 @@ object NameRegistry {
 
             try {
                 tempMqtt.start(listOf(targetTopic))
-                if (connLatch.await(1_600L, TimeUnit.MILLISECONDS)) {
+                if (connLatch.await(1_800L, TimeUnit.MILLISECONDS)) {
+                    try { Thread.sleep(240L) } catch (_: InterruptedException) { }
                     claimLatch.await(waitMs, TimeUnit.MILLISECONDS)
                     val existingOwner = ownerRef.get()
                     if (existingOwner != 0L && existingOwner != accountUid) {
@@ -146,7 +147,7 @@ object NameRegistry {
                     val claimPkt = buildEncryptedClaim(newDisplayName, accountUid)
                     tempMqtt.publish(targetTopic, claimPkt, retain = true)
                     try {
-                        Thread.sleep(150L)
+                        Thread.sleep(260L)
                     } catch (_: InterruptedException) { }
                 }
                 onComplete(ClaimResult.Claimed)

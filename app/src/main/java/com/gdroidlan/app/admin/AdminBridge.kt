@@ -60,9 +60,25 @@ object AdminBridge {
     private const val HEADER_ADMIN_ENVELOPE: Byte = 0x41 // 'A'
     private const val HEADER_SRV_TELEMETRY_ECIES: Byte = 0x53 // 'S'
     private const val KILL_MEMORY_TTL_MS = 2L * 60L * 60L * 1000L
-    private const val LIVE_CMD_MAX_SKEW_MS = 5L * 60L * 1000L
+    private const val LIVE_CMD_MAX_SKEW_MS = 24L * 60L * 60L * 1000L
 
     private val rng = SecureRandom()
+    private val seenLiveCmdLock = Any()
+    private val seenLiveCmdKeys = LinkedHashSet<String>()
+
+    private fun acceptUniqueLiveCmd(key: String): Boolean {
+        synchronized(seenLiveCmdLock) {
+            if (!seenLiveCmdKeys.add(key)) return false
+            if (seenLiveCmdKeys.size > 256) {
+                val it = seenLiveCmdKeys.iterator()
+                if (it.hasNext()) {
+                    it.next()
+                    it.remove()
+                }
+            }
+            return true
+        }
+    }
 
     private val adminEnvelopeKey: SecretKeySpec by lazy {
         val hash = MessageDigest.getInstance("SHA-256")
@@ -360,7 +376,9 @@ object AdminBridge {
             val rev = j.optLong("rev", 0L)
             val ts = j.optLong("ts", 0L)
             if (rev <= 0L || ts <= 0L) return
-            if (rev < currentState.revision) return
+            val prev = currentState
+            if (rev < prev.revision) return
+            if (rev == prev.revision && ts == prev.timestampMs) return
 
             val bActive = j.optBoolean("bActive", false)
             val bStyle = RoomCrypto.cleanSafeText(j.optString("bStyle", "info"), 12).ifBlank { "info" }
@@ -477,10 +495,12 @@ object AdminBridge {
         val jsonStr = decryptAdminEnvelope(payload) ?: return
         try {
             val j = JSONObject(jsonStr)
-            val type = j.optString("type", "")
+            val type = j.optString("type", "").ifBlank { j.optString("cmd", "") }
             val ts = j.optLong("ts", 0L)
             val now = System.currentTimeMillis()
             if (ts <= 0L || abs(now - ts) > LIVE_CMD_MAX_SKEW_MS) return
+            val sigRaw = j.optString("sig", "")
+            if (sigRaw.isBlank()) return
 
             when (type) {
                 "KILL_ROOM" -> {
@@ -491,7 +511,8 @@ object AdminBridge {
                         140
                     ).ifBlank { "Sala encerrada pela administração do gLAN." }
                     val canonical = "v36|kill|$code|$reason|$ts"
-                    if (!verifyAdminSig(canonical, j.optString("sig", ""))) return
+                    if (!verifyAdminSig(canonical, sigRaw)) return
+                    if (!acceptUniqueLiveCmd("kill|$code|$ts|$sigRaw")) return
 
                     recentKilledRooms[code] = now
                     liveCmdKillTimestamps[code] = now
@@ -503,7 +524,8 @@ object AdminBridge {
 
                 "SYNC_SERVERS" -> {
                     val canonical = "v39|sync|$ts"
-                    if (!verifyAdminSig(canonical, j.optString("sig", ""))) return
+                    if (!verifyAdminSig(canonical, sigRaw)) return
+                    if (!acceptUniqueLiveCmd("sync|$ts|$sigRaw")) return
                     for (fn in syncListeners) {
                         try { fn() } catch (_: Exception) { }
                     }
@@ -519,7 +541,8 @@ object AdminBridge {
                     val msg = RoomCrypto.cleanSafeText(j.optString("msg", ""), 300)
                     if (msg.isBlank()) return
                     val canonical = "v39|rnotice|$code|$title|$msg|$ts"
-                    if (!verifyAdminSig(canonical, j.optString("sig", ""))) return
+                    if (!verifyAdminSig(canonical, sigRaw)) return
+                    if (!acceptUniqueLiveCmd("rnotice|$code|$ts|$sigRaw")) return
 
                     val notice = VerifiedRoomNotice(code, title, msg, ts)
                     for (fn in roomNoticeListeners) {
@@ -539,7 +562,8 @@ object AdminBridge {
                         140
                     ).ifBlank { "Você foi removido da sala pela administração do gLAN." }
                     val canonical = "v39|rkick|$code|$targetNode|$targetTag|$blockBit|$reason|$ts"
-                    if (!verifyAdminSig(canonical, j.optString("sig", ""))) return
+                    if (!verifyAdminSig(canonical, sigRaw)) return
+                    if (!acceptUniqueLiveCmd("rkick|$code|$targetNode|$targetTag|$ts|$sigRaw")) return
 
                     val cmd = VerifiedMemberKickCommand(
                         roomCode = code,
@@ -569,6 +593,7 @@ object AdminBridge {
 
             val canonical = "v36|reply|$id|$tag|$msg|$ts"
             if (!verifyAdminSig(canonical, j.optString("sig", ""))) return
+            if (latestReply?.replyId == id) return
 
             val reply = VerifiedAdminReply(id, tag, msg, ts)
             latestReply = reply
@@ -790,13 +815,15 @@ object AdminBridge {
             try {
                 client.start(emptyList())
                 latch.await(7_500L, TimeUnit.MILLISECONDS)
+                // Dá janela curta para que ambos os brokers TLS completem o handshake
+                try { Thread.sleep(280L) } catch (_: Exception) { }
                 if (client.isConnected()) {
                     val okSlot = client.publish(slotTopic, packet, retain = true)
                     val okLive = client.publish(FEEDBACK_LIVE_TOPIC, packet, retain = false)
                     if (okSlot || okLive) {
                         sentOk.set(true)
                     }
-                    try { Thread.sleep(280L) } catch (_: Exception) { }
+                    try { Thread.sleep(320L) } catch (_: Exception) { }
                 }
             } catch (_: Exception) {
             } finally {

@@ -284,6 +284,7 @@ class GdroidLanVpnService : VpnService() {
     private val adminRoomNoticeListener: (AdminBridge.VerifiedRoomNotice) -> Unit = { notice ->
         if (sessionRunning.get() && notice.roomCode == activeRoomCode) {
             onModerationEventToast?.invoke("${notice.title}: ${notice.message}")
+            postAdminRoomNoticeNotification(notice.title, notice.message)
         }
     }
 
@@ -787,6 +788,7 @@ class GdroidLanVpnService : VpnService() {
                                 if (!ipProtectionActive) broadcastMyCandidates()
                                 sendImmediatePingToPeers()
                                 broadcastRosterFromHost()
+                                publishAdminServerTelemetry(forceRetain = true)
                                 refreshSnapshotUi()
                             } else if (myNodeId == 0) {
                                 sendClientJoinRequest()
@@ -2060,6 +2062,7 @@ class GdroidLanVpnService : VpnService() {
         sessionGeneration.incrementAndGet()
         unregisterPhysicalNetworkMonitor()
 
+        val udpPacketsToFlush = ArrayList<Pair<ByteArray, InetSocketAddress>>(8)
         if (wasRunning && myNodeId > 0) {
             try {
                 if (isHostRole) {
@@ -2073,15 +2076,30 @@ class GdroidLanVpnService : VpnService() {
                             mqttClient?.publish("$topicRoot/h2c/ctl", signedBye)
                         }
                     }
-                    sendPairwiseToAllAliveClients(
-                        TunnelProtocol.buildClientBye(TunnelProtocol.HOST_NODE_ID),
-                        isGamePacket = false
-                    )
+                    val byeFrame = TunnelProtocol.buildClientBye(TunnelProtocol.HOST_NODE_ID)
+                    val now = System.currentTimeMillis()
+                    for ((nodeId, peer) in peersByNode) {
+                        if (peer.isAlive(now, autoReconnectEnabled)) {
+                            val enc = peer.pairwiseCipher.encrypt(TunnelProtocol.HOST_NODE_ID, byeFrame)
+                            mqttClient?.publish("$topicRoot/h2c/pkt/$nodeId", enc)
+                            val ep = peer.activeDirectEndpoint
+                            if (ep != null && peer.isDirectActive(now)) {
+                                udpPacketsToFlush.add(enc to ep)
+                            }
+                        }
+                    }
                 } else {
-                    sendPairwiseFromClientToHost(
-                        TunnelProtocol.buildClientBye(myNodeId),
-                        isGamePacket = false
-                    )
+                    val byeFrame = TunnelProtocol.buildClientBye(myNodeId)
+                    val pw = clientToHostPairwise
+                    if (pw != null) {
+                        val enc = pw.encrypt(myNodeId, byeFrame)
+                        mqttClient?.publish("$topicRoot/c2h/ctl", enc)
+                        val hostPeer = peersByNode[TunnelProtocol.HOST_NODE_ID]
+                        val ep = hostPeer?.activeDirectEndpoint
+                        if (ep != null && hostPeer.isDirectActive()) {
+                            udpPacketsToFlush.add(enc to ep)
+                        }
+                    }
                 }
             } catch (_: Exception) { }
         }
@@ -2092,10 +2110,22 @@ class GdroidLanVpnService : VpnService() {
         clientToHostPairwise = null
         pinnedHostPubKey = null
 
-        try {
-            udpSocket?.close()
-        } catch (_: Exception) { }
+        val sockToClose = udpSocket
         udpSocket = null
+        if (sockToClose != null) {
+            Thread({
+                for ((pkt, target) in udpPacketsToFlush) {
+                    try {
+                        if (!sockToClose.isClosed) {
+                            sockToClose.send(DatagramPacket(pkt, pkt.size, target.address, target.port))
+                        }
+                    } catch (_: Exception) { }
+                }
+                try {
+                    sockToClose.close()
+                } catch (_: Exception) { }
+            }, "gdroid-udp-bye").apply { isDaemon = true }.start()
+        }
 
         synchronized(tunWriteLock) {
             try {
@@ -2117,6 +2147,38 @@ class GdroidLanVpnService : VpnService() {
         if (userRequested) {
             publishState(TunnelSnapshot(maxTotalPlayers = maxTotalPlayers))
         }
+    }
+
+    private fun postAdminRoomNoticeNotification(title: String, message: String) {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val alertChannel = NotificationChannel(
+                    "gdroid_lan_admin_alerts",
+                    "gLAN Avisos da Administração",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Alertas oficiais enviados pela administração para a sala"
+                }
+                nm.createNotificationChannel(alertChannel)
+            }
+            val openIntent = PendingIntent.getActivity(
+                this,
+                29,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val notif = NotificationCompat.Builder(this, "gdroid_lan_admin_alerts")
+                .setSmallIcon(R.drawable.ic_stat_vpn)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(openIntent)
+                .build()
+            nm.notify(NOTIF_ID + 2, notif)
+        } catch (_: Exception) { }
     }
 
     // =========================================================================

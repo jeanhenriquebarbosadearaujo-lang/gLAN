@@ -1,15 +1,16 @@
 package com.gdroidlan.app.net
 
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.EOFException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.util.UUID
-import java.util.concurrent.CopyOnWriteArraySet
+import java.security.SecureRandom
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.HttpsURLConnection
@@ -18,337 +19,454 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
 /**
- * Cliente MQTT 3.1.1 binário endurecido com TLS 1.2/1.3 obrigatório,
- * verificação estrita de hostname do certificado X.509 (anti-MITM),
- * reconexão rápida em troca de rede (Wi-Fi <-> 4G/5G),
- * limite máximo de frame (anti-OOM) e suporte a VpnService.protect(socket).
+ * Cliente MQTT 3.1.1 sobre TLS 1.2/1.3 (porta 8883) em malha redundante Dual-Broker.
+ *
+ * Correções estruturais v4.0:
+ *  1. Zero I/O na thread chamadora (elimina 100% de NetworkOnMainThreadException ao clicar em
+ *     Atualizar, Encerrar Servidor, Sair da Sala ou trocar #TAG na MainActivity).
+ *  2. Conexão simultânea redundante aos 2 clusters TLS públicos (broker.emqx.io + broker.hivemq.com),
+ *     eliminando Split-Brain entre jogadores em operadoras diferentes ou após troca Wi-Fi <-> 4G.
+ *  3. Drenagem assíncrona no stop() para garantir entrega de BYE, fechamento de sala pública
+ *     e limpeza de slots retidos antes de encerrar o socket TLS.
  */
 class MqttLightClient(
     private val socketProtector: (Socket) -> Boolean,
     private val onPacketReceived: (topic: String, payload: ByteArray) -> Unit,
-    private val onConnectionStateChanged: (connected: Boolean, brokerLabel: String) -> Unit
+    private val onConnectionStateChanged: (connected: Boolean, brokerHost: String) -> Unit
 ) {
     private data class BrokerEndpoint(val host: String, val port: Int)
 
-    // Exclusivamente TLS (porta 8883) — sem fallback em texto aberto
+    private data class OutboundFrame(
+        val bytes: ByteArray,
+        val highPriority: Boolean
+    )
+
     private val brokers = listOf(
         BrokerEndpoint("broker.emqx.io", 8883),
         BrokerEndpoint("broker.hivemq.com", 8883)
     )
 
-    companion object {
-        private const val MAX_MQTT_FRAME_BYTES = 65_536
-    }
-
     private val running = AtomicBoolean(false)
-    private val connected = AtomicBoolean(false)
-    private val manualReconnectRequested = AtomicBoolean(false)
+    private val subscribedTopics: MutableSet<String> =
+        Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val packetIdGen = AtomicInteger(1)
-    private val writeLock = Any()
-    private val subscribedTopics = CopyOnWriteArraySet<String>()
+    private val rng = SecureRandom()
+    private val connectedHosts: MutableSet<String> =
+        Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
     @Volatile
-    private var activeSocket: Socket? = null
+    private var workers: List<BrokerWorker> = emptyList()
 
-    @Volatile
-    private var activeOut: OutputStream? = null
+    fun isConnected(): Boolean = connectedHosts.isNotEmpty()
 
-    @Volatile
-    private var workerThread: Thread? = null
-
-    fun isConnected(): Boolean = connected.get()
-
-    fun start(initialTopics: List<String>) {
+    fun start(initialTopics: Collection<String>) {
         subscribedTopics.addAll(initialTopics)
-        if (!running.compareAndSet(false, true)) return
-
-        val t = Thread({
-            var brokerIdx = 0
-            while (running.get()) {
-                val ep = brokers[brokerIdx % brokers.size]
-                manualReconnectRequested.set(false)
-                var connectedOnceInAttempt = false
-                try {
-                    runSession(ep) { connectedOnceInAttempt = true }
-                } catch (_: Throwable) {
-                } finally {
-                    val wasConn = connected.getAndSet(false)
-                    closeQuietly()
-                    if (wasConn && running.get()) {
-                        onConnectionStateChanged(false, ep.host)
-                    }
-                }
-                if (!running.get()) break
-
-                val fastHandover = manualReconnectRequested.getAndSet(false)
-                if (!fastHandover && !connectedOnceInAttempt) {
-                    brokerIdx++
-                }
-                val sleepMs = if (fastHandover) 250L else 1200L
-                try {
-                    Thread.sleep(sleepMs)
-                } catch (_: InterruptedException) {
-                    if (!running.get()) break
+        if (running.getAndSet(true)) {
+            if (initialTopics.isNotEmpty()) {
+                val subFrame = buildSubscribePacket(initialTopics.toList())
+                for (w in workers) {
+                    w.enqueue(subFrame, highPriority = true)
                 }
             }
-        }, "gdroid-mqtt-loop").apply { isDaemon = true }
-        workerThread = t
-        t.start()
+            return
+        }
+        connectedHosts.clear()
+        val list = brokers.mapIndexed { idx, ep -> BrokerWorker(idx, ep) }
+        workers = list
+        for (w in list) {
+            w.start()
+        }
+    }
+
+    fun stop() {
+        if (!running.getAndSet(false)) return
+        val activeWorkers = workers
+        workers = emptyList()
+        connectedHosts.clear()
+        for (w in activeWorkers) {
+            w.stopGracefully()
+        }
     }
 
     /**
-     * Aborta imediatamente o socket preso na interface antiga (ex.: queda do Wi-Fi para 4G/5G)
-     * e reconecta em ~250ms pela nova rota física ativa.
+     * Força reconexão imediata em ambos os brokers após troca física Wi-Fi <-> 4G/5G.
      */
     fun forceReconnectNow() {
         if (!running.get()) return
-        manualReconnectRequested.set(true)
-        closeQuietly()
-        try {
-            workerThread?.interrupt()
-        } catch (_: Exception) { }
+        for (w in workers) {
+            w.forceReconnectNow()
+        }
     }
 
     fun subscribe(topic: String) {
         val added = subscribedTopics.add(topic)
-        if (added && connected.get()) {
-            try {
-                sendSubscribe(listOf(topic))
-            } catch (_: Exception) { }
+        if (added) {
+            val frame = buildSubscribePacket(listOf(topic))
+            for (w in workers) {
+                w.enqueue(frame, highPriority = true)
+            }
         }
     }
 
     fun forceResubscribe(topic: String) {
         subscribedTopics.add(topic)
-        if (connected.get()) {
-            try {
-                sendSubscribe(listOf(topic))
-            } catch (_: Exception) { }
+        val frame = buildSubscribePacket(listOf(topic))
+        for (w in workers) {
+            w.enqueue(frame, highPriority = true)
         }
     }
 
     fun unsubscribe(topic: String) {
         val removed = subscribedTopics.remove(topic)
-        if (removed && connected.get()) {
-            try {
-                sendUnsubscribe(listOf(topic))
-            } catch (_: Exception) { }
+        if (removed) {
+            val frame = buildUnsubscribePacket(listOf(topic))
+            for (w in workers) {
+                w.enqueue(frame, highPriority = true)
+            }
         }
     }
 
     fun publish(topic: String, payload: ByteArray, retain: Boolean = false): Boolean {
-        if (!connected.get() || payload.size > MAX_MQTT_FRAME_BYTES) return false
-        return try {
-            val topicBytes = topic.toByteArray(Charsets.UTF_8)
-            val bodyLen = 2 + topicBytes.size + payload.size
-            val frame = ByteArrayOutputStream(5 + bodyLen)
-            frame.write(if (retain) 0x31 else 0x30) // PUBLISH QoS 0 (+ RETAIN opcional)
-            writeVarLen(frame, bodyLen)
-            frame.write((topicBytes.size ushr 8) and 0xFF)
-            frame.write(topicBytes.size and 0xFF)
-            frame.write(topicBytes)
-            frame.write(payload)
-            val raw = frame.toByteArray()
+        if (!running.get()) return false
+        val topicBytes = topic.toByteArray(Charsets.UTF_8)
+        if (topicBytes.isEmpty() || topicBytes.size > 512 || payload.size > 65_535) return false
 
-            synchronized(writeLock) {
-                val out = activeOut ?: return false
-                out.write(raw)
+        val pkt = buildPublishPacket(topicBytes, payload, retain)
+        var queuedAny = false
+        for (w in workers) {
+            if (w.enqueue(pkt, highPriority = retain)) {
+                queuedAny = true
+            }
+        }
+        return queuedAny
+    }
+
+    private fun onWorkerStateChanged(host: String, isNowConnected: Boolean) {
+        if (!running.get()) return
+        if (isNowConnected) {
+            val added = connectedHosts.add(host)
+            if (added) {
+                onConnectionStateChanged(true, host)
+            }
+        } else {
+            val removed = connectedHosts.remove(host)
+            if (removed && connectedHosts.isEmpty()) {
+                onConnectionStateChanged(false, host)
+            }
+        }
+    }
+
+    private inner class BrokerWorker(
+        private val workerIndex: Int,
+        private val endpoint: BrokerEndpoint
+    ) {
+        private val workerRunning = AtomicBoolean(false)
+        private val workerConnected = AtomicBoolean(false)
+        private val outboundQueue = LinkedBlockingQueue<OutboundFrame>(512)
+
+        @Volatile private var activeSocket: Socket? = null
+        @Volatile private var readerThread: Thread? = null
+
+        fun isConnected(): Boolean = workerConnected.get()
+
+        fun start() {
+            if (workerRunning.getAndSet(true)) return
+            readerThread = Thread({ runLoop() }, "glan-mqtt-rx-$workerIndex").apply {
+                isDaemon = true
+                start()
+            }
+        }
+
+        fun enqueue(bytes: ByteArray, highPriority: Boolean): Boolean {
+            if (!workerRunning.get() || !workerConnected.get()) return false
+            val frame = OutboundFrame(bytes, highPriority)
+            if (outboundQueue.offer(frame)) return true
+            if (highPriority) {
+                outboundQueue.poll()
+                return outboundQueue.offer(frame)
+            }
+            return false
+        }
+
+        fun forceReconnectNow() {
+            if (!workerRunning.get()) return
+            val sock = activeSocket
+            Thread({
+                try { sock?.close() } catch (_: Exception) { }
+            }, "glan-mqtt-cycle-$workerIndex").apply { isDaemon = true }.start()
+        }
+
+        fun stopGracefully() {
+            if (!workerRunning.getAndSet(false)) return
+            val sock = activeSocket
+            val wasConn = workerConnected.getAndSet(false)
+            if (!wasConn || sock == null) {
+                outboundQueue.clear()
+                try { sock?.close() } catch (_: Exception) { }
+                readerThread?.interrupt()
+                return
+            }
+            // Enfileira DISCONNECT após quaisquer pacotes BYE / close / retain=vazio já pendentes
+            outboundQueue.offer(OutboundFrame(byteArrayOf(0xE0.toByte(), 0x00), highPriority = true))
+            Thread({
+                val deadline = System.currentTimeMillis() + 360L
+                while (outboundQueue.isNotEmpty() && System.currentTimeMillis() < deadline) {
+                    try { Thread.sleep(15L) } catch (_: Exception) { break }
+                }
+                try { sock.close() } catch (_: Exception) { }
+                readerThread?.interrupt()
+            }, "glan-mqtt-drain-$workerIndex").apply { isDaemon = true }.start()
+        }
+
+        private fun runLoop() {
+            var failStreak = 0
+            while (workerRunning.get() && running.get()) {
+                try {
+                    connectAndLoopOnce()
+                    failStreak = 0
+                } catch (_: Exception) {
+                    failStreak = (failStreak + 1).coerceAtMost(6)
+                } finally {
+                    val wasConn = workerConnected.getAndSet(false)
+                    closeActiveSocketQuietly()
+                    outboundQueue.clear()
+                    if (wasConn) {
+                        onWorkerStateChanged(endpoint.host, false)
+                    }
+                }
+                if (workerRunning.get() && running.get()) {
+                    val delayMs = when (failStreak) {
+                        0, 1 -> 1_100L
+                        2 -> 2_200L
+                        3 -> 3_800L
+                        else -> 6_500L
+                    }
+                    try {
+                        Thread.sleep(delayMs)
+                    } catch (_: InterruptedException) { }
+                }
+            }
+        }
+
+        private fun connectAndLoopOnce() {
+            outboundQueue.clear()
+
+            val rawSocket = Socket()
+            socketProtector(rawSocket)
+            rawSocket.tcpNoDelay = true
+            rawSocket.keepAlive = true
+            rawSocket.connect(InetSocketAddress(endpoint.host, endpoint.port), 7_500)
+            rawSocket.soTimeout = 28_000
+
+            val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            val ssl = sslFactory.createSocket(rawSocket, endpoint.host, endpoint.port, true) as SSLSocket
+            ssl.enabledProtocols = ssl.supportedProtocols.filter {
+                it == "TLSv1.3" || it == "TLSv1.2"
+            }.toTypedArray()
+
+            ssl.sslParameters = ssl.sslParameters.apply {
+                endpointIdentificationAlgorithm = "HTTPS"
+            }
+            ssl.startHandshake()
+
+            val hostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+            if (!hostnameVerifier.verify(endpoint.host, ssl.session)) {
+                ssl.close()
+                throw SSLHandshakeException("Certificado TLS não corresponde a ${endpoint.host}")
+            }
+
+            activeSocket = ssl
+            val input = ssl.inputStream
+            val out = ssl.outputStream
+
+            val clientId = "gl40_" + ByteArray(6).also { rng.nextBytes(it) }
+                .joinToString("") { "%02x".format(it) }
+            out.write(buildConnectPacket(clientId, keepAliveSec = 20))
+            out.flush()
+
+            val connAckType = input.read()
+            if (connAckType != 0x20) throw IllegalStateException("CONNACK inválido: $connAckType")
+            val remLen = readRemainingLength(input)
+            val connAckBody = readExact(input, remLen)
+            if (connAckBody.size < 2 || connAckBody[1].toInt() != 0) {
+                throw IllegalStateException("Broker recusou MQTT CONNECT")
+            }
+
+            val initialTopics = subscribedTopics.toList()
+            if (initialTopics.isNotEmpty()) {
+                out.write(buildSubscribePacket(initialTopics))
                 out.flush()
             }
-            true
-        } catch (_: Exception) {
-            closeQuietly()
-            false
-        }
-    }
 
-    fun stop() {
-        if (!running.compareAndSet(true, false)) return
-        try {
-            synchronized(writeLock) {
-                activeOut?.write(byteArrayOf(0xE0.toByte(), 0x00))
-                activeOut?.flush()
+            workerConnected.set(true)
+            onWorkerStateChanged(endpoint.host, true)
+
+            // Thread dedicada de escrita e keepalive (nunca bloqueia nem roda na UI thread)
+            val writerThread = Thread({
+                runWriterLoop(ssl, out)
+            }, "glan-mqtt-tx-$workerIndex").apply {
+                isDaemon = true
+                start()
             }
-        } catch (_: Exception) { }
-        closeQuietly()
-        connected.set(false)
-        try {
-            workerThread?.interrupt()
-        } catch (_: Exception) { }
-        workerThread = null
-    }
 
-    private fun runSession(ep: BrokerEndpoint, onHandshakeReady: () -> Unit) {
-        val rawSocket = Socket()
-        socketProtector(rawSocket)
-        rawSocket.tcpNoDelay = true
-        rawSocket.keepAlive = true
-        rawSocket.connect(InetSocketAddress(ep.host, ep.port), 7_500)
-        rawSocket.soTimeout = 22_000
+            try {
+                while (workerRunning.get() && running.get() && activeSocket === ssl) {
+                    val header = input.read()
+                    if (header < 0) throw EOFException("Broker fechou o stream")
+                    val packetType = (header ushr 4) and 0x0F
+                    val flags = header and 0x0F
+                    val length = readRemainingLength(input)
+                    if (length > 131_072) {
+                        throw IllegalStateException("Pacote MQTT excedeu limite seguro: $length")
+                    }
+                    val body = readExact(input, length)
 
-        val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
-        val ssl = sslFactory.createSocket(rawSocket, ep.host, ep.port, true) as SSLSocket
-        ssl.useClientMode = true
-
-        // Endurece protocolos permitidos (apenas TLSv1.2 / TLSv1.3) e identificação HTTPS do host
-        val supported = ssl.supportedProtocols.filter { it == "TLSv1.3" || it == "TLSv1.2" }
-        if (supported.isNotEmpty()) {
-            ssl.enabledProtocols = supported.toTypedArray()
-        }
-        val sslParams = ssl.sslParameters
-        sslParams.endpointIdentificationAlgorithm = "HTTPS"
-        ssl.sslParameters = sslParams
-
-        ssl.startHandshake()
-        if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(ep.host, ssl.session)) {
-            ssl.close()
-            throw SSLHandshakeException("Certificado TLS não corresponde ao host ${ep.host}")
-        }
-
-        activeSocket = ssl
-        val input = BufferedInputStream(ssl.getInputStream(), 32 * 1024)
-        val output = BufferedOutputStream(ssl.getOutputStream(), 32 * 1024)
-        activeOut = output
-
-        val clientId = ("gdl_" + UUID.randomUUID().toString().replace("-", "").take(14)).toByteArray(Charsets.UTF_8)
-        val varHeader = byteArrayOf(0x00, 0x04, 'M'.code.toByte(), 'Q'.code.toByte(), 'T'.code.toByte(), 'T'.code.toByte(), 0x04, 0x02, 0x00, 0x18)
-        val payloadLen = 2 + clientId.size
-        val connectPacket = ByteArrayOutputStream()
-        connectPacket.write(0x10)
-        writeVarLen(connectPacket, varHeader.size + payloadLen)
-        connectPacket.write(varHeader)
-        connectPacket.write((clientId.size ushr 8) and 0xFF)
-        connectPacket.write(clientId.size and 0xFF)
-        connectPacket.write(clientId)
-
-        synchronized(writeLock) {
-            output.write(connectPacket.toByteArray())
-            output.flush()
-        }
-
-        val firstByte = input.read()
-        if (firstByte != 0x20) throw IllegalStateException("CONNACK inválido: $firstByte")
-        val remLen = readVarLen(input)
-        val connAck = readExact(input, remLen)
-        if (connAck.size < 2 || connAck[1].toInt() != 0) {
-            throw IllegalStateException("Broker recusou conexão: ${connAck.getOrNull(1)}")
-        }
-
-        connected.set(true)
-        onHandshakeReady()
-        if (subscribedTopics.isNotEmpty()) {
-            sendSubscribe(subscribedTopics.toList())
-        }
-        onConnectionStateChanged(true, "${ep.host} (TLS)")
-
-        val keepaliveThread = Thread({
-            while (running.get() && connected.get() && activeSocket === ssl) {
-                try {
-                    Thread.sleep(12_000L)
-                    if (!running.get() || !connected.get() || activeSocket !== ssl) break
-                    var shouldStop = false
-                    synchronized(writeLock) {
-                        val out = activeOut
-                        if (out == null) {
-                            shouldStop = true
-                        } else {
-                            out.write(byteArrayOf(0xC0.toByte(), 0x00))
-                            out.flush()
+                    if (packetType == 3 && body.size >= 2) {
+                        val topicLen = ((body[0].toInt() and 0xFF) shl 8) or (body[1].toInt() and 0xFF)
+                        var idx = 2 + topicLen
+                        if (idx <= body.size) {
+                            val topic = String(body, 2, topicLen, Charsets.UTF_8)
+                            val qos = (flags ushr 1) and 0x03
+                            var pktId = 0
+                            if (qos > 0) {
+                                if (idx + 2 > body.size) continue
+                                pktId = ((body[idx].toInt() and 0xFF) shl 8) or (body[idx + 1].toInt() and 0xFF)
+                                idx += 2
+                            }
+                            val payload = body.copyOfRange(idx, body.size)
+                            if (qos == 1) {
+                                val pubAck = byteArrayOf(
+                                    0x40.toByte(),
+                                    0x02,
+                                    ((pktId ushr 8) and 0xFF).toByte(),
+                                    (pktId and 0xFF).toByte()
+                                )
+                                enqueue(pubAck, highPriority = true)
+                            }
+                            try {
+                                onPacketReceived(topic, payload)
+                            } catch (_: Exception) { }
                         }
                     }
-                    if (shouldStop) break
+                }
+            } finally {
+                writerThread.interrupt()
+            }
+        }
+
+        private fun runWriterLoop(ssl: SSLSocket, out: OutputStream) {
+            var lastWriteAtMs = System.currentTimeMillis()
+            while (activeSocket === ssl && !ssl.isClosed) {
+                try {
+                    val next = outboundQueue.poll(5_000L, TimeUnit.MILLISECONDS)
+                    if (next != null) {
+                        out.write(next.bytes)
+                        // Drena em lote pacotes já na fila antes do flush para menor latência em jogo
+                        var batched = 0
+                        while (batched < 16) {
+                            val extra = outboundQueue.poll() ?: break
+                            out.write(extra.bytes)
+                            batched++
+                        }
+                        out.flush()
+                        lastWriteAtMs = System.currentTimeMillis()
+                        if (next.bytes.size == 2 && next.bytes[0] == 0xE0.toByte()) {
+                            break
+                        }
+                    } else if (workerRunning.get() && running.get()) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastWriteAtMs >= 13_500L) {
+                            out.write(byteArrayOf(0xC0.toByte(), 0x00))
+                            out.flush()
+                            lastWriteAtMs = now
+                        }
+                    } else if (outboundQueue.isEmpty()) {
+                        break
+                    }
+                } catch (_: InterruptedException) {
+                    if (!workerRunning.get() && outboundQueue.isEmpty()) break
                 } catch (_: Exception) {
-                    closeQuietly()
+                    closeActiveSocketQuietly()
                     break
                 }
             }
-        }, "gdroid-mqtt-ping").apply { isDaemon = true }
-        keepaliveThread.start()
+        }
 
-        while (running.get() && activeSocket === ssl) {
-            val header = input.read()
-            if (header < 0) throw EOFException("Conexão encerrada")
-            val packetType = (header ushr 4) and 0x0F
-            val flags = header and 0x0F
-            val length = readVarLen(input)
-            if (length < 0 || length > MAX_MQTT_FRAME_BYTES) {
-                throw IllegalStateException("Frame MQTT excedeu limite seguro: $length")
-            }
-            val body = if (length > 0) readExact(input, length) else ByteArray(0)
-
-            if (packetType == 3 && body.size >= 2) {
-                val tLen = ((body[0].toInt() and 0xFF) shl 8) or (body[1].toInt() and 0xFF)
-                var pos = 2 + tLen
-                if (tLen in 1..256 && pos <= body.size) {
-                    val topic = String(body, 2, tLen, Charsets.UTF_8)
-                    val qos = (flags ushr 1) and 0x03
-                    if (qos > 0 && pos + 2 <= body.size) {
-                        pos += 2
-                    }
-                    val data = body.copyOfRange(pos, body.size)
-                    try {
-                        onPacketReceived(topic, data)
-                    } catch (_: Exception) { }
-                }
-            }
+        private fun closeActiveSocketQuietly() {
+            val s = activeSocket
+            activeSocket = null
+            try { s?.close() } catch (_: Exception) { }
         }
     }
 
-    private fun sendSubscribe(topics: List<String>) {
-        if (topics.isEmpty()) return
-        val pid = packetIdGen.getAndUpdate { if (it >= 65000) 1 else it + 1 }
+    private fun buildSubscribePacket(topics: List<String>): ByteArray {
+        val valid = topics.filter { it.isNotBlank() }
+        if (valid.isEmpty()) return ByteArray(0)
+        val pid = nextPacketId()
         val body = ByteArrayOutputStream()
         body.write((pid ushr 8) and 0xFF)
         body.write(pid and 0xFF)
-        for (t in topics) {
-            val tb = t.toByteArray(Charsets.UTF_8)
-            body.write((tb.size ushr 8) and 0xFF)
-            body.write(tb.size and 0xFF)
-            body.write(tb)
-            body.write(0x00)
+        for (t in valid) {
+            writeUtf8(body, t)
+            body.write(0) // QoS 0
         }
-        val bodyBytes = body.toByteArray()
-        val pkt = ByteArrayOutputStream(5 + bodyBytes.size)
-        pkt.write(0x82)
-        writeVarLen(pkt, bodyBytes.size)
-        pkt.write(bodyBytes)
-        val raw = pkt.toByteArray()
-
-        synchronized(writeLock) {
-            val out = activeOut ?: return
-            out.write(raw)
-            out.flush()
-        }
+        return wrapFixedHeader(0x82, body.toByteArray())
     }
 
-    private fun sendUnsubscribe(topics: List<String>) {
-        if (topics.isEmpty()) return
-        val pid = packetIdGen.getAndUpdate { if (it >= 65000) 1 else it + 1 }
+    private fun buildUnsubscribePacket(topics: List<String>): ByteArray {
+        val valid = topics.filter { it.isNotBlank() }
+        if (valid.isEmpty()) return ByteArray(0)
+        val pid = nextPacketId()
         val body = ByteArrayOutputStream()
         body.write((pid ushr 8) and 0xFF)
         body.write(pid and 0xFF)
-        for (t in topics) {
-            val tb = t.toByteArray(Charsets.UTF_8)
-            body.write((tb.size ushr 8) and 0xFF)
-            body.write(tb.size and 0xFF)
-            body.write(tb)
+        for (t in valid) {
+            writeUtf8(body, t)
         }
-        val bodyBytes = body.toByteArray()
-        val pkt = ByteArrayOutputStream(5 + bodyBytes.size)
-        pkt.write(0xA2)
-        writeVarLen(pkt, bodyBytes.size)
-        pkt.write(bodyBytes)
-        val raw = pkt.toByteArray()
-
-        synchronized(writeLock) {
-            val out = activeOut ?: return
-            out.write(raw)
-            out.flush()
-        }
+        return wrapFixedHeader(0xA2, body.toByteArray())
     }
 
-    private fun writeVarLen(out: ByteArrayOutputStream, value: Int) {
-        var x = value
+    private fun buildConnectPacket(clientId: String, keepAliveSec: Int): ByteArray {
+        val body = ByteArrayOutputStream()
+        writeUtf8(body, "MQTT")
+        body.write(4) // MQTT 3.1.1
+        body.write(0x02) // Clean Session
+        body.write((keepAliveSec ushr 8) and 0xFF)
+        body.write(keepAliveSec and 0xFF)
+        writeUtf8(body, clientId)
+        return wrapFixedHeader(0x10, body.toByteArray())
+    }
+
+    private fun buildPublishPacket(topicBytes: ByteArray, payload: ByteArray, retain: Boolean): ByteArray {
+        val remLen = 2 + topicBytes.size + payload.size
+        val out = ByteArrayOutputStream(5 + remLen)
+        val headerByte = if (retain) 0x31 else 0x30 // QoS 0 (+ RETAIN opcional)
+        out.write(headerByte)
+        writeRemainingLength(out, remLen)
+        out.write((topicBytes.size ushr 8) and 0xFF)
+        out.write(topicBytes.size and 0xFF)
+        out.write(topicBytes)
+        out.write(payload)
+        return out.toByteArray()
+    }
+
+    private fun wrapFixedHeader(headerByte: Int, body: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream(5 + body.size)
+        out.write(headerByte)
+        writeRemainingLength(out, body.size)
+        out.write(body)
+        return out.toByteArray()
+    }
+
+    private fun writeUtf8(out: OutputStream, s: String) {
+        val b = s.toByteArray(Charsets.UTF_8)
+        out.write((b.size ushr 8) and 0xFF)
+        out.write(b.size and 0xFF)
+        out.write(b)
+    }
+
+    private fun writeRemainingLength(out: OutputStream, length: Int) {
+        var x = length
         do {
             var encoded = x % 128
             x /= 128
@@ -357,37 +475,35 @@ class MqttLightClient(
         } while (x > 0)
     }
 
-    private fun readVarLen(input: InputStream): Int {
+    private fun readRemainingLength(input: InputStream): Int {
         var multiplier = 1
         var value = 0
         var count = 0
         while (true) {
-            val b = input.read()
-            if (b < 0) throw EOFException("EOF lendo varlen")
-            value += (b and 0x7F) * multiplier
-            if ((b and 0x80) == 0) return value
+            val encoded = input.read()
+            if (encoded < 0) throw EOFException("EOF lendo Remaining Length")
+            value += (encoded and 127) * multiplier
+            if ((encoded and 128) == 0) break
             multiplier *= 128
             count++
-            if (count > 4) throw IllegalStateException("Varlen MQTT malformado")
+            if (count > 4) throw IllegalStateException("Remaining Length malformado")
         }
+        return value
     }
 
-    private fun readExact(input: InputStream, n: Int): ByteArray {
-        val out = ByteArray(n)
-        var readTotal = 0
-        while (readTotal < n) {
-            val r = input.read(out, readTotal, n - readTotal)
-            if (r < 0) throw EOFException("EOF lendo corpo ($readTotal/$n)")
-            readTotal += r
+    private fun readExact(input: InputStream, len: Int): ByteArray {
+        val buf = ByteArray(len)
+        var off = 0
+        while (off < len) {
+            val n = input.read(buf, off, len - off)
+            if (n < 0) throw EOFException("EOF lendo corpo MQTT")
+            off += n
         }
-        return out
+        return buf
     }
 
-    private fun closeQuietly() {
-        try {
-            activeSocket?.close()
-        } catch (_: Exception) { }
-        activeSocket = null
-        activeOut = null
+    private fun nextPacketId(): Int {
+        val id = packetIdGen.getAndUpdate { cur -> if (cur >= 65530) 1 else cur + 1 }
+        return id.coerceIn(1, 65535)
     }
 }
