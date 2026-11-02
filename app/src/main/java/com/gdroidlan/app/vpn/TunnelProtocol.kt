@@ -49,6 +49,12 @@ object TunnelProtocol {
         21, 22, 23, 135, 137, 138, 139, 445, 5037, 5555, 5556, 8022
     )
 
+    // Portas de descoberta LAN do Source Engine / Garry's Mod / GDroid (sv_lan 26900..26905 e 27015..27020)
+    private val SOURCE_LAN_DISCOVERY_PORTS = 26900..27050
+
+    // Portas NS_CLIENT do Source Engine protegidas contra respostas A2S_INFO 'A' de 9 bytes
+    private val SOURCE_CLIENT_GAME_PORTS = 27005..27009
+
     data class RoomMemberInfo(
         val nodeId: Int,
         val sessionId: Long,
@@ -633,8 +639,145 @@ object TunnelProtocol {
         return true
     }
 
+    /**
+     * Detecta desafios de consulta de lista de servidores (ReplyServerChallenge: FF FF FF FF 'A' + 4B = 9 bytes)
+     * endereçados erroneamente à porta NS_CLIENT (27005..27009).
+     *
+     * No Source Engine / GDroid (libengine.so ProcessConnectionlessPacket), NS_CLIENT espera que todo pacote 'A'
+     * comece com S2C_MAGICVERSION (0x5A4F4933, >= 14 bytes). Se um desafio A2S de 9 bytes atingir 27005..27009,
+     * o jogo aborta com "#GameUI_ServerConnectOutOfDate" ("O servidor não foi atualizado para a versão mais recente.").
+     * Consultas legítimas da aba LAN usam sockets efêmeros (> 27030) e continuam passando integralmente.
+     */
+    private fun isStrayQueryChallengeToClientPort(pkt: ByteArray, offset: Int, len: Int): Boolean {
+        val ihl = pkt[offset].toInt() and 0x0F
+        val hdrLen = ihl * 4
+        if (hdrLen < 20 || hdrLen + 8 > len) return false
+        val flagsAndFrag = ((pkt[offset + 6].toInt() and 0xFF) shl 8) or (pkt[offset + 7].toInt() and 0xFF)
+        if ((flagsAndFrag and 0x1FFF) != 0) return false
+        val proto = pkt[offset + 9].toInt() and 0xFF
+        if (proto != 17) return false
+
+        val dstPort = ((pkt[offset + hdrLen + 2].toInt() and 0xFF) shl 8) or
+            (pkt[offset + hdrLen + 3].toInt() and 0xFF)
+        if (dstPort !in SOURCE_CLIENT_GAME_PORTS) return false
+
+        val payOff = offset + hdrLen + 8
+        val payLen = len - (hdrLen + 8)
+        if (payLen != 9) return false
+
+        return pkt[payOff] == 0xFF.toByte() &&
+            pkt[payOff + 1] == 0xFF.toByte() &&
+            pkt[payOff + 2] == 0xFF.toByte() &&
+            pkt[payOff + 3] == 0xFF.toByte() &&
+            pkt[payOff + 4] == 0x41.toByte()
+    }
+
+    private fun computeIpv4HeaderChecksum(buf: ByteArray, hdrLen: Int): Int {
+        var sum = 0
+        var i = 0
+        while (i < hdrLen) {
+            if (i != 10) {
+                val word = ((buf[i].toInt() and 0xFF) shl 8) or (buf[i + 1].toInt() and 0xFF)
+                sum += word
+            }
+            i += 2
+        }
+        while ((sum ushr 16) != 0) {
+            sum = (sum and 0xFFFF) + (sum ushr 16)
+        }
+        return sum.inv() and 0xFFFF
+    }
+
+    private fun computeUdpIpv4Checksum(buf: ByteArray, hdrLen: Int, totalLen: Int): Int {
+        val udpLen = totalLen - hdrLen
+        if (udpLen < 8) return 0
+        var sum = 0
+        // Pseudo-cabeçalho IPv4: srcIp (12..15), dstIp (16..19), proto (17), udpLen
+        var i = 12
+        while (i < 20) {
+            sum += ((buf[i].toInt() and 0xFF) shl 8) or (buf[i + 1].toInt() and 0xFF)
+            i += 2
+        }
+        sum += 17
+        sum += udpLen
+
+        var p = hdrLen
+        val endEven = hdrLen + (udpLen and 0xFFFE)
+        while (p < endEven) {
+            if (p != hdrLen + 6) {
+                sum += ((buf[p].toInt() and 0xFF) shl 8) or (buf[p + 1].toInt() and 0xFF)
+            }
+            p += 2
+        }
+        if ((udpLen and 1) != 0) {
+            sum += (buf[totalLen - 1].toInt() and 0xFF) shl 8
+        }
+        while ((sum ushr 16) != 0) {
+            sum = (sum and 0xFFFF) + (sum ushr 16)
+        }
+        val csum = sum.inv() and 0xFFFF
+        return if (csum == 0) 0xFFFF else csum
+    }
+
+    /**
+     * Prepara um pacote IPv4 recebido pelo túnel antes de injetá-lo na interface local tun0:
+     * 1. Bloqueia qualquer ReplyServerChallenge A2S ('A' de 9 bytes) perdido rumo à porta NS_CLIENT (27005..27009).
+     * 2. Converte broadcasts de descoberta LAN do GMod (255.255.255.255 / 10.10.0.255) para o IP unicast local
+     *    da tun0 (ex.: 10.10.0.1 no Host), recalculando checksums IPv4 e UDP para que a aba "LAN" nativa
+     *    dentro do próprio Garry's Mod / GDroid encontre e liste o servidor automaticamente.
+     */
+    fun prepareIncomingIpv4ForLocalTun(
+        pkt: ByteArray,
+        offset: Int,
+        len: Int,
+        localNodeId: Int
+    ): ByteArray? {
+        if (localNodeId !in HOST_NODE_ID..MAX_CLIENT_NODE_ID) return null
+        if (len < 20 || offset < 0 || offset + len > pkt.size) return null
+        val ver = (pkt[offset].toInt() ushr 4) and 0x0F
+        val ihl = pkt[offset].toInt() and 0x0F
+        val hdrLen = ihl * 4
+        if (ver != 4 || ihl < 5 || hdrLen > len) return null
+
+        if (isStrayQueryChallengeToClientPort(pkt, offset, len)) {
+            return null
+        }
+
+        val d0 = pkt[offset + 16].toInt() and 0xFF
+        val d1 = pkt[offset + 17].toInt() and 0xFF
+        val d2 = pkt[offset + 18].toInt() and 0xFF
+        val d3 = pkt[offset + 19].toInt() and 0xFF
+
+        val isBroadcast = (d0 == 255 && d1 == 255 && d2 == 255 && d3 == 255) ||
+            (d0 == 10 && d1 == 10 && d2 == 0 && d3 == 255)
+
+        val out = pkt.copyOfRange(offset, offset + len)
+        if (!isBroadcast) {
+            return out
+        }
+
+        out[16] = 10
+        out[17] = 10
+        out[18] = 0
+        out[19] = (localNodeId and 0xFF).toByte()
+
+        val ipCsum = computeIpv4HeaderChecksum(out, hdrLen)
+        out[10] = ((ipCsum ushr 8) and 0xFF).toByte()
+        out[11] = (ipCsum and 0xFF).toByte()
+
+        val flagsAndFrag = ((out[6].toInt() and 0xFF) shl 8) or (out[7].toInt() and 0xFF)
+        val proto = out[9].toInt() and 0xFF
+        if ((flagsAndFrag and 0x1FFF) == 0 && proto == 17 && hdrLen + 8 <= len) {
+            val udpCsum = computeUdpIpv4Checksum(out, hdrLen, len)
+            out[hdrLen + 6] = ((udpCsum ushr 8) and 0xFF).toByte()
+            out[hdrLen + 7] = (udpCsum and 0xFF).toByte()
+        }
+        return out
+    }
+
     fun inspectOutgoingIpv4Target(pkt: ByteArray, len: Int, expectedSenderNode: Int): Int {
         if (!passesPortFirewall(pkt, 0, len)) return -1
+        if (isStrayQueryChallengeToClientPort(pkt, 0, len)) return -1
 
         val s0 = pkt[12].toInt() and 0xFF
         val s1 = pkt[13].toInt() and 0xFF
@@ -647,9 +790,16 @@ object TunnelProtocol {
         val d2 = pkt[18].toInt() and 0xFF
         val d3 = pkt[19].toInt() and 0xFF
 
-        if ((d0 == 10 && d1 == 10 && d2 == 0 && d3 == 255) ||
-            (d0 == 255 && d1 == 255 && d2 == 255 && d3 == 255)
-        ) {
+        if (d0 == 255 && d1 == 255 && d2 == 255 && d3 == 255) {
+            val hdrLen = (pkt[0].toInt() and 0x0F) * 4
+            val proto = pkt[9].toInt() and 0xFF
+            if (proto != 17 || hdrLen + 4 > len) return -1
+            val dstPort = ((pkt[hdrLen + 2].toInt() and 0xFF) shl 8) or
+                (pkt[hdrLen + 3].toInt() and 0xFF)
+            return if (dstPort in SOURCE_LAN_DISCOVERY_PORTS) BROADCAST_NODE_ID else -1
+        }
+
+        if (d0 == 10 && d1 == 10 && d2 == 0 && d3 == 255) {
             return BROADCAST_NODE_ID
         }
 

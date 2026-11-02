@@ -756,6 +756,10 @@ class GdroidLanVpnService : VpnService() {
                 .setBlocking(true)
                 .addAddress(virtualIp, 24)
                 .addRoute("10.10.0.0", 24)
+            try {
+                // Captura broadcasts 255.255.255.255 da aba LAN nativa dentro do GMod / GDroid
+                builder.addRoute("255.255.255.255", 32)
+            } catch (_: Exception) { }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setMetered(false)
             }
@@ -969,10 +973,14 @@ class GdroidLanVpnService : VpnService() {
 
     private fun writeIpv4ToTun(rawIpv4: ByteArray, offset: Int, length: Int) {
         if (length < 20) return
+        val localNode = myNodeId
+        if (localNode <= 0) return
+        val prepared = TunnelProtocol.prepareIncomingIpv4ForLocalTun(rawIpv4, offset, length, localNode)
+            ?: return
         synchronized(tunWriteLock) {
             try {
-                tunOutStream?.write(rawIpv4, offset, length)
-                rxBytesTotal.addAndGet(length.toLong())
+                tunOutStream?.write(prepared, 0, prepared.size)
+                rxBytesTotal.addAndGet(prepared.size.toLong())
             } catch (_: Exception) { }
         }
     }
@@ -1260,7 +1268,7 @@ class GdroidLanVpnService : VpnService() {
                 refreshSnapshotUi()
                 if (!wasGameOpen && roster.gamePortOpen) {
                     onModerationEventToast?.invoke(
-                        "Partida aberta no GDroid! Use ${TunnelProtocol.HOST_CONNECT_CMD}"
+                        "Partida aberta! Entre pela aba LAN do GMod ou ${TunnelProtocol.HOST_CONNECT_CMD}"
                     )
                 }
             }
@@ -1719,9 +1727,9 @@ class GdroidLanVpnService : VpnService() {
                     else -> "Ponte TLS"
                 }
                 detail = if (ipProtectionActive) {
-                    "Sala ativa com Proteção de IP. No GDroid, todos entram no IP 10.10.0.1."
+                    "Sala ativa com Proteção de IP. Os jogadores entram pela aba LAN do GMod ou IP 10.10.0.1."
                 } else {
-                    "Sala ativa e protegida. No GDroid, todos entram no IP 10.10.0.1."
+                    "Sala ativa. Os jogadores entram pela aba LAN do GMod ou pelo IP 10.10.0.1."
                 }
             } else if (mqttOk) {
                 phase = StatusPhase.WAITING_FRIEND
@@ -1763,9 +1771,9 @@ class GdroidLanVpnService : VpnService() {
                     else -> "Ponte TLS"
                 }
                 detail = if (ipProtectionActive) {
-                    "Conectado com IP oculto na sala de $hostDisplayNameOnClient. Entre em 10.10.0.1 no GDroid."
+                    "Conectado com IP oculto na sala de $hostDisplayNameOnClient. Entre pela aba LAN do GMod ou 10.10.0.1."
                 } else {
-                    "Conectado na sala de $hostDisplayNameOnClient. Entre no IP 10.10.0.1 no GDroid."
+                    "Conectado na sala de $hostDisplayNameOnClient. Entre pela aba LAN do GMod ou 10.10.0.1."
                 }
                 membersList = buildClientMembersList(bestPing, routeLabel, myIp)
             } else {
@@ -1990,10 +1998,15 @@ class GdroidLanVpnService : VpnService() {
         ensureNotificationChannel(nm)
 
         val stopLabel = if (isHostRole) "Encerrar" else "Sair da Sala"
+        val hintLine = if (isHostRole) {
+            "Abra um mapa Multiplayer/LAN no GMod (visível na aba LAN)"
+        } else {
+            "No GMod: aba LAN ou console ${TunnelProtocol.HOST_CONNECT_CMD}"
+        }
         val notif = buildRichNotification(
             titleText = "gLAN Ativo",
             shortText = contentText,
-            expandedText = "$contentText\nConsole GDroid: ${TunnelProtocol.HOST_CONNECT_CMD}",
+            expandedText = "$contentText\n$hintLine",
             stopLabel = stopLabel
         )
         lastNotifSignature = "init|$contentText|$stopLabel"
@@ -2022,7 +2035,12 @@ class GdroidLanVpnService : VpnService() {
         }
         val mapPart = if (snap.mapMode.isNotBlank()) " • ${snap.mapMode}" else ""
         val shortText = "$gamePart$mapPart • $pingPart"
-        val expandedText = "$shortText\nMeu IP: ${snap.myVirtualIp} • Console: ${TunnelProtocol.HOST_CONNECT_CMD}"
+        val roleHint = if (snap.isHost) {
+            "Servidor: ${snap.myVirtualIp}:27015 (listado na aba LAN do GMod)"
+        } else {
+            "Meu IP: ${snap.myVirtualIp} • Aba LAN ou ${TunnelProtocol.HOST_CONNECT_CMD}"
+        }
+        val expandedText = "$shortText\n$roleHint"
         val stopLabel = if (snap.isHost) "Encerrar" else "Sair da Sala"
 
         val sig = "$title|$shortText|$expandedText|$stopLabel"

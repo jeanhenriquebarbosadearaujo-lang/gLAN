@@ -1409,7 +1409,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:lineSpacingExtra="4dp"
-                        android:text="1. Entre em um dos Servidores Públicos, use um código em Entrar na Sala ou abra sua sala em Criar Servidor.\n2. Assim que a partida abrir, toque em Copiar connect (ou direto pela notificação).\n3. No console do GDroid, cole connect 10.10.0.1:27015 (ou conecte pelo IP 10.10.0.1)."
+                        android:text="1. Entre em um dos Servidores Públicos, use um código em Entrar na Sala ou abra sua sala em Criar Servidor.\n2. O Host inicia um mapa Multiplayer / LAN (2 a 8 jogadores) no Garry's Mod / GDroid.\n3. No próprio GMod, entre direto pela aba Encontrar Jogo > LAN, pelo IP 10.10.0.1 ou pelo console connect 10.10.0.1:27015."
                         android:textColor="@color/text_secondary"
                         android:textSize="12.5sp" />
                 </LinearLayout>

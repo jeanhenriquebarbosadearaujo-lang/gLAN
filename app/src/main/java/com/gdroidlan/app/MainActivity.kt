@@ -2213,12 +2213,18 @@ class MainActivity : AppCompatActivity() {
             if (snap.gamePortOpen) {
                 UiMotion.setBreathingPulse(b.viewDotJogoGdroid, false)
                 b.viewDotJogoGdroid.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#10B981"))
-                b.txtStatusJogoGdroid.text = "Partida aberta no GDroid (porta 27015 ativa)"
+                b.txtStatusJogoGdroid.text = "Partida aberta no GMod / GDroid (porta 27015 ativa)"
                 b.txtStatusJogoGdroid.setTextColor(Color.parseColor("#10B981"))
-                b.txtMapaAtivoSessao.text = if (snap.mapMode.isNotBlank()) {
-                    "Mapa/Modo: ${snap.mapMode} • Console: ${TunnelProtocol.HOST_CONNECT_CMD}"
+                b.txtMapaAtivoSessao.text = if (snap.isHost) {
+                    if (snap.mapMode.isNotBlank()) {
+                        "Mapa/Modo: ${snap.mapMode} • Visível na aba LAN do GMod"
+                    } else {
+                        "Servidor ativo em 10.10.0.1:27015 • Visível na aba LAN do GMod"
+                    }
+                } else if (snap.mapMode.isNotBlank()) {
+                    "Mapa/Modo: ${snap.mapMode} • Aba LAN ou ${TunnelProtocol.HOST_CONNECT_CMD}"
                 } else {
-                    "Pronta para entrar • Console: ${TunnelProtocol.HOST_CONNECT_CMD}"
+                    "Entre pela aba LAN do GMod ou ${TunnelProtocol.HOST_CONNECT_CMD}"
                 }
                 if (jogoMudou) {
                     UiMotion.pulseConfirmation(b.boxStatusJogoGdroid)
@@ -2227,9 +2233,9 @@ class MainActivity : AppCompatActivity() {
                 b.viewDotJogoGdroid.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#F59E0B"))
                 UiMotion.setBreathingPulse(b.viewDotJogoGdroid, true)
                 b.txtStatusJogoGdroid.text = if (snap.isHost) {
-                    "Abra um mapa no GDroid para liberar a partida"
+                    "Abra um mapa Multiplayer/LAN (2-8 jogadores) no GMod"
                 } else {
-                    "Aguardando o Host iniciar o mapa no GDroid"
+                    "Aguardando o Host iniciar o mapa no GMod / GDroid"
                 }
                 b.txtStatusJogoGdroid.setTextColor(Color.parseColor("#F1F5F9"))
                 b.txtMapaAtivoSessao.text = if (snap.mapMode.isNotBlank()) {
