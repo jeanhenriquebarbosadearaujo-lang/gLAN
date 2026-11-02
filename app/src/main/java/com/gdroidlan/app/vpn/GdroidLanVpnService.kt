@@ -7,22 +7,14 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioManager
-import android.media.ToneGenerator
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.os.SystemClock
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.gdroidlan.app.MainActivity
@@ -45,8 +37,6 @@ import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -99,16 +89,6 @@ class GdroidLanVpnService : VpnService() {
         @Volatile var lastDirectRxAt: Long = 0L
         @Volatile var lastAnyRxAt: Long = System.currentTimeMillis()
         @Volatile var lastRttMs: Long = -1L
-
-        // Estado administrativo de efeitos na sessão (assinados pelo gLAN Admin)
-        @Volatile var trollGhostUntilMs: Long = 0L
-        @Volatile var trollLagUntilMs: Long = 0L
-        @Volatile var trollOscillateUntilMs: Long = 0L
-        @Volatile var trollAlias: String = ""
-        val trollPktCounter = AtomicInteger(0)
-
-        val effectiveDisplayName: String
-            get() = trollAlias.ifBlank { displayName }
 
         private var rateWindowSec: Long = 0L
         private var unicastPktsInSec: Int = 0
@@ -251,21 +231,7 @@ class GdroidLanVpnService : VpnService() {
     @Volatile private var sessionStartedAtMs = 0L
     @Volatile private var lastNotifSignature = ""
     @Volatile private var hostDisplayNameOnClient = "Anfitrião"
-    @Volatile private var remoteHostVersionCode = 0
     @Volatile private var remoteRosterCache: List<TunnelProtocol.RoomMemberInfo> = emptyList()
-
-    // Estado de efeitos locais e fila assíncrona limitada para simulação de latência
-    @Volatile private var selfTrollGhostUntilMs: Long = 0L
-    @Volatile private var selfTrollLagUntilMs: Long = 0L
-    @Volatile private var selfTrollOscillateUntilMs: Long = 0L
-    @Volatile private var myTrollAlias: String = ""
-    private val selfTrollPktCounter = AtomicInteger(0)
-    private val trollWaveGen = AtomicLong(0L)
-    private val pendingDelayedPkts = AtomicInteger(0)
-    private val mainUiHandler = Handler(Looper.getMainLooper())
-    private val trollScheduler = Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "gdroid-troll-sched").apply { isDaemon = true }
-    }
 
     private val adminStateListener: (AdminBridge.VerifiedAdminState) -> Unit = { _ ->
         if (sessionRunning.get()) {
@@ -341,12 +307,6 @@ class GdroidLanVpnService : VpnService() {
         }
     }
 
-    private val adminTrollListener: (AdminBridge.VerifiedTrollCommand) -> Unit = { cmd ->
-        if (sessionRunning.get()) {
-            handleVerifiedAdminTroll(cmd)
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         AdminBridge.addStateListener(adminStateListener)
@@ -354,7 +314,6 @@ class GdroidLanVpnService : VpnService() {
         AdminBridge.addSyncListener(adminSyncListener)
         AdminBridge.addRoomNoticeListener(adminRoomNoticeListener)
         AdminBridge.addMemberKickListener(adminMemberKickListener)
-        AdminBridge.addTrollListener(adminTrollListener)
     }
 
     @Volatile private var myNodeId: Int = 0
@@ -531,7 +490,6 @@ class GdroidLanVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        AdminBridge.removeTrollListener(adminTrollListener)
         AdminBridge.removeMemberKickListener(adminMemberKickListener)
         AdminBridge.removeRoomNoticeListener(adminRoomNoticeListener)
         AdminBridge.removeSyncListener(adminSyncListener)
@@ -713,8 +671,6 @@ class GdroidLanVpnService : VpnService() {
         clientSessionId = rng.nextLong()
         wasReconnectingToastShown = false
         hasPhysicalInternet = true
-        remoteHostVersionCode = 0
-        resetSelfTrolls()
 
         peersByNode.clear()
         sessionToNode.clear()
@@ -978,7 +934,7 @@ class GdroidLanVpnService : VpnService() {
                 nodeId = TunnelProtocol.HOST_NODE_ID,
                 sessionId = 0L,
                 accountUid = myAccountUid,
-                displayName = myTrollAlias.ifBlank { myDisplayName },
+                displayName = myDisplayName,
                 virtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
                 isHost = true,
                 pingMs = 0L,
@@ -1001,7 +957,7 @@ class GdroidLanVpnService : VpnService() {
                     nodeId = p.nodeId,
                     sessionId = p.sessionId,
                     accountUid = p.accountUid,
-                    displayName = p.effectiveDisplayName,
+                    displayName = p.displayName,
                     virtualIp = TunnelProtocol.nodeIp(p.nodeId),
                     isHost = false,
                     pingMs = p.lastRttMs,
@@ -1166,45 +1122,6 @@ class GdroidLanVpnService : VpnService() {
 
                     val plainFrame = TunnelProtocol.buildIpv4Frame(sender, dstNode, buf, n)
                     txBytesTotal.addAndGet(n.toLong())
-
-                    // Aplica modelagem local quando alvo for o próprio aparelho (ou se Host for < v4.1)
-                    val applyLocalShaping = isHostRole || remoteHostVersionCode < 23
-                    val nowMs = System.currentTimeMillis()
-                    if (applyLocalShaping) {
-                        if (nowMs < selfTrollOscillateUntilMs && ((nowMs / 1000L) % 6L) < 4L) {
-                            continue
-                        }
-                        if (nowMs < selfTrollGhostUntilMs && TunnelProtocol.isSourceGameTrafficPacket(buf, 0, n)) {
-                            if (selfTrollPktCounter.incrementAndGet() % 14 != 0) {
-                                continue
-                            }
-                        }
-                        if (nowMs < selfTrollLagUntilMs) {
-                            if (rng.nextInt(100) < 28) continue
-                            if (pendingDelayedPkts.get() < 96) {
-                                pendingDelayedPkts.incrementAndGet()
-                                val delayMs = 420L + rng.nextInt(480)
-                                trollScheduler.schedule({
-                                    try {
-                                        if (sessionRunning.get() && sessionGeneration.get() == gen) {
-                                            if (isHostRole) {
-                                                if (dstNode == TunnelProtocol.BROADCAST_NODE_ID) {
-                                                    sendPairwiseToAllAliveClients(plainFrame, isGamePacket = true)
-                                                } else {
-                                                    sendPairwiseToSpecificClient(dstNode, plainFrame, isGamePacket = true)
-                                                }
-                                            } else {
-                                                sendPairwiseFromClientToHost(plainFrame, isGamePacket = true)
-                                            }
-                                        }
-                                    } finally {
-                                        pendingDelayedPkts.decrementAndGet()
-                                    }
-                                }, delayMs, TimeUnit.MILLISECONDS)
-                                continue
-                            }
-                        }
-                    }
 
                     if (isHostRole) {
                         if (dstNode == TunnelProtocol.BROADCAST_NODE_ID) {
@@ -1397,7 +1314,7 @@ class GdroidLanVpnService : VpnService() {
                     val rej = roomCipher?.encrypt(
                         TunnelProtocol.buildJoinReject(
                             req.sessionId,
-                            "Sala cheia ($maxTotalPlayers/$maxTotalPlayers jogadores)."
+                            "Sala cheia ($effectiveCap/$effectiveCap jogadores)."
                         )
                     ) ?: return
                     mqttClient?.publish("$topicRoot/h2c/ctl", rej)
@@ -1480,7 +1397,6 @@ class GdroidLanVpnService : VpnService() {
                 clientToHostPairwise = pairwise
                 maxTotalPlayers = ack.maxPlayers
                 hostDisplayNameOnClient = ack.hostName
-                remoteHostVersionCode = ack.hostVersionCode
 
                 val hostPeer = peersByNode[TunnelProtocol.HOST_NODE_ID]
                 if (hostPeer == null) {
@@ -1679,60 +1595,24 @@ class GdroidLanVpnService : VpnService() {
                     if (!peer.allowIncomingTunnelPacket(now, payloadLen, isBcast)) {
                         return
                     }
-
-                    // Aplica modelagem assinada pelo Admin no roteador do Host para convidados alvo
-                    if (now < peer.trollOscillateUntilMs && ((now / 1000L) % 6L) < 4L) {
-                        return
-                    }
-                    if (now < peer.trollGhostUntilMs &&
-                        TunnelProtocol.isSourceGameTrafficPacket(plain, 3, payloadLen)
-                    ) {
-                        if (peer.trollPktCounter.incrementAndGet() % 14 != 0) {
-                            return
+                    when {
+                        dstNode == TunnelProtocol.HOST_NODE_ID -> {
+                            writeIpv4ToTun(plain, 3, payloadLen)
                         }
-                    }
-
-                    val deliverGuestPacket: () -> Unit = {
-                        when {
-                            dstNode == TunnelProtocol.HOST_NODE_ID -> {
-                                writeIpv4ToTun(plain, 3, payloadLen)
-                            }
-                            dstNode == TunnelProtocol.BROADCAST_NODE_ID -> {
-                                writeIpv4ToTun(plain, 3, payloadLen)
-                                for ((otherId, otherPeer) in peersByNode) {
-                                    if (otherId != senderNode && otherPeer.isAlive(System.currentTimeMillis(), autoReconnectEnabled)) {
-                                        sendPairwiseToSpecificClient(otherId, plain, isGamePacket = true)
-                                    }
-                                }
-                            }
-                            dstNode in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID -> {
-                                if (peersByNode.containsKey(dstNode)) {
-                                    sendPairwiseToSpecificClient(dstNode, plain, isGamePacket = true)
+                        dstNode == TunnelProtocol.BROADCAST_NODE_ID -> {
+                            writeIpv4ToTun(plain, 3, payloadLen)
+                            for ((otherId, otherPeer) in peersByNode) {
+                                if (otherId != senderNode && otherPeer.isAlive(now, autoReconnectEnabled)) {
+                                    sendPairwiseToSpecificClient(otherId, plain, isGamePacket = true)
                                 }
                             }
                         }
-                    }
-
-                    if (now < peer.trollLagUntilMs) {
-                        if (rng.nextInt(100) < 28) return
-                        if (pendingDelayedPkts.get() < 96) {
-                            val currentGen = sessionGeneration.get()
-                            pendingDelayedPkts.incrementAndGet()
-                            val delayMs = 420L + rng.nextInt(480)
-                            trollScheduler.schedule({
-                                try {
-                                    if (sessionRunning.get() && sessionGeneration.get() == currentGen) {
-                                        deliverGuestPacket()
-                                    }
-                                } finally {
-                                    pendingDelayedPkts.decrementAndGet()
-                                }
-                            }, delayMs, TimeUnit.MILLISECONDS)
-                            return
+                        dstNode in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID -> {
+                            if (peersByNode.containsKey(dstNode)) {
+                                sendPairwiseToSpecificClient(dstNode, plain, isGamePacket = true)
+                            }
                         }
                     }
-
-                    deliverGuestPacket()
                 } else {
                     if (dstNode == myNodeId || dstNode == TunnelProtocol.BROADCAST_NODE_ID) {
                         writeIpv4ToTun(plain, 3, payloadLen)
@@ -2279,7 +2159,6 @@ class GdroidLanVpnService : VpnService() {
             tunBoundNodeId = 0
         }
 
-        resetSelfTrolls()
         releaseWakeLockSafe()
         try {
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -2288,326 +2167,6 @@ class GdroidLanVpnService : VpnService() {
         if (userRequested) {
             publishState(TunnelSnapshot(maxTotalPlayers = maxTotalPlayers))
         }
-    }
-
-    private fun resetSelfTrolls() {
-        selfTrollGhostUntilMs = 0L
-        selfTrollLagUntilMs = 0L
-        selfTrollOscillateUntilMs = 0L
-        myTrollAlias = ""
-        trollWaveGen.incrementAndGet()
-    }
-
-    private fun handleVerifiedAdminTroll(cmd: AdminBridge.VerifiedTrollCommand) {
-        if (!sessionRunning.get()) return
-        if (cmd.roomCode != "ALL" && !cmd.roomCode.equals(activeRoomCode, ignoreCase = true)) {
-            return
-        }
-
-        val now = System.currentTimeMillis()
-        val durationMs = cmd.durationSec.coerceIn(3, 300) * 1000L
-        val untilMs = now + durationMs
-
-        val amITargeted = when (cmd.scope) {
-            "ALL" -> true
-            "HOST" -> isHostRole
-            "GUESTS" -> !isHostRole
-            "PLAYER" -> {
-                val byTag = cmd.targetTag.isNotBlank() && myAccountTag.equals(cmd.targetTag, ignoreCase = true)
-                val byNode = cmd.targetNodeId > 0 && cmd.targetNodeId == myNodeId
-                byTag || byNode
-            }
-            else -> false
-        }
-
-        val targetedPeers: List<PeerNode> = if (isHostRole) {
-            when (cmd.scope) {
-                "ALL", "GUESTS" -> peersByNode.values.toList()
-                "HOST" -> emptyList()
-                "PLAYER" -> peersByNode.values.filter { p ->
-                    (cmd.targetTag.isNotBlank() && p.accountTag.equals(cmd.targetTag, ignoreCase = true)) ||
-                        (cmd.targetNodeId in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID &&
-                            p.nodeId == cmd.targetNodeId)
-                }
-                else -> emptyList()
-            }
-        } else {
-            emptyList()
-        }
-
-        when (cmd.trollAction) {
-            "STOP_TROLLS" -> {
-                resetSelfTrolls()
-                if (isHostRole) {
-                    for (p in peersByNode.values) {
-                        p.trollGhostUntilMs = 0L
-                        p.trollLagUntilMs = 0L
-                        p.trollOscillateUntilMs = 0L
-                        p.trollAlias = ""
-                    }
-                    broadcastRosterFromHost()
-                    refreshSnapshotUi()
-                    publishAdminServerTelemetry(forceRetain = true)
-                }
-            }
-
-            "GHOST_CONTROLS" -> {
-                if (amITargeted) {
-                    selfTrollGhostUntilMs = untilMs
-                }
-                for (p in targetedPeers) {
-                    p.trollGhostUntilMs = untilMs
-                }
-            }
-
-            "LAG_SPIKE" -> {
-                if (amITargeted) {
-                    selfTrollLagUntilMs = untilMs
-                }
-                for (p in targetedPeers) {
-                    p.trollLagUntilMs = untilMs
-                }
-            }
-
-            "OSCILLATE_LOOP" -> {
-                if (amITargeted) {
-                    selfTrollOscillateUntilMs = untilMs
-                }
-                for (p in targetedPeers) {
-                    p.trollOscillateUntilMs = untilMs
-                }
-            }
-
-            "FAKE_ANTICHEAT" -> {
-                if (amITargeted) {
-                    val body = cmd.customText.ifBlank {
-                        "Anomalia de pacotes detectada em garrysmod/lua. Verificando integridade da sessão..."
-                    }
-                    postAdminRoomNoticeNotification("Source Anti-Cheat — Inspeção de Sessão", body)
-                    triggerSirenAndVibration(durationSec = 5, intense = true)
-                    val waveId = trollWaveGen.incrementAndGet()
-                    val alerts = listOf(
-                        "[Source Anti-Cheat] $body",
-                        "[Source Anti-Cheat] Escaneando hooks Lua e entidades ativas (74%)...",
-                        "[Source Anti-Cheat] Sessão marcada para auditoria da moderação gLAN."
-                    )
-                    alerts.forEachIndexed { idx, line ->
-                        trollScheduler.schedule({
-                            if (sessionRunning.get() && trollWaveGen.get() == waveId) {
-                                mainUiHandler.post {
-                                    try {
-                                        Toast.makeText(applicationContext, line, Toast.LENGTH_LONG).show()
-                                    } catch (_: Exception) { }
-                                }
-                            }
-                        }, idx * 3600L, TimeUnit.MILLISECONDS)
-                    }
-                }
-            }
-
-            "FAKE_ERROR_STORM" -> {
-                if (amITargeted) {
-                    val waveId = trollWaveGen.incrementAndGet()
-                    val custom = cmd.customText
-                    val errorLines = listOf(
-                        custom.ifBlank { "[ERROR] lua/autorun/server/sv_physics.lua:142: attempt to index a nil value" },
-                        "Warning: Connection Problem — Auto-disconnect in 24.8 seconds",
-                        "CMaterial::PrecacheVars: erro ao carregar vmt models/props_c17/oildrum001_explosive",
-                        "Reliable snapshot overflow: sincronizando entidades do servidor..."
-                    )
-                    postAdminRoomNoticeNotification(
-                        "Alerta de Integridade Source Engine",
-                        errorLines.first()
-                    )
-                    val totalBursts = (cmd.durationSec.coerceIn(6, 60) / 4).coerceIn(2, 14)
-                    for (i in 0 until totalBursts) {
-                        val textLine = if (custom.isNotBlank() && i % 2 == 0) {
-                            custom
-                        } else {
-                            errorLines[i % errorLines.size]
-                        }
-                        trollScheduler.schedule({
-                            if (sessionRunning.get() && trollWaveGen.get() == waveId) {
-                                pulseShortVibration(180L)
-                                mainUiHandler.post {
-                                    try {
-                                        Toast.makeText(applicationContext, textLine, Toast.LENGTH_SHORT).show()
-                                    } catch (_: Exception) { }
-                                }
-                            }
-                        }, i * 3800L, TimeUnit.MILLISECONDS)
-                    }
-                }
-            }
-
-            "SIREN_VIBRATE" -> {
-                if (amITargeted) {
-                    val dur = cmd.durationSec.coerceIn(3, 25)
-                    triggerSirenAndVibration(durationSec = dur, intense = true)
-                    if (cmd.customText.isNotBlank()) {
-                        postAdminRoomNoticeNotification("Alerta Sonoro da Administração", cmd.customText)
-                        mainUiHandler.post {
-                            try {
-                                Toast.makeText(applicationContext, cmd.customText, Toast.LENGTH_LONG).show()
-                            } catch (_: Exception) { }
-                        }
-                    }
-                }
-            }
-
-            "RENAME_CLOWN" -> {
-                val baseAlias = cmd.customText.take(20).ifBlank { "Pato_do_GDroid" }
-                if (isHostRole) {
-                    var changed = false
-                    if (amITargeted) {
-                        myTrollAlias = baseAlias
-                        changed = true
-                    }
-                    for (p in targetedPeers) {
-                        p.trollAlias = if (targetedPeers.size > 1) {
-                            "${baseAlias.take(16)}_${p.nodeId}"
-                        } else {
-                            baseAlias
-                        }
-                        changed = true
-                    }
-                    if (changed) {
-                        val gen = sessionGeneration.get()
-                        broadcastRosterFromHost()
-                        refreshSnapshotUi()
-                        publishAdminServerTelemetry(forceRetain = true)
-                        if (cmd.durationSec < 290) {
-                            trollScheduler.schedule({
-                                if (sessionRunning.get() && sessionGeneration.get() == gen && isHostRole) {
-                                    var restored = false
-                                    if (myTrollAlias == baseAlias) {
-                                        myTrollAlias = ""
-                                        restored = true
-                                    }
-                                    for (p in targetedPeers) {
-                                        if (p.trollAlias.startsWith(baseAlias.take(16))) {
-                                            p.trollAlias = ""
-                                            restored = true
-                                        }
-                                    }
-                                    if (restored) {
-                                        broadcastRosterFromHost()
-                                        refreshSnapshotUi()
-                                        publishAdminServerTelemetry(forceRetain = true)
-                                    }
-                                }
-                            }, durationMs, TimeUnit.MILLISECONDS)
-                        }
-                    }
-                }
-                if (amITargeted) {
-                    pulseShortVibration(240L)
-                    mainUiHandler.post {
-                        try {
-                            Toast.makeText(
-                                applicationContext,
-                                "Seu apelido na sala foi alterado para: $baseAlias",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } catch (_: Exception) { }
-                    }
-                }
-            }
-
-            "HUMILIATE_KICK" -> {
-                val reason = cmd.customText.ifBlank {
-                    "Expulso da partida por atrapalhar jogadores no servidor GDroid."
-                }
-                if (amITargeted) {
-                    postAdminRoomNoticeNotification("Expulso pela Moderação gLAN", reason)
-                    triggerSirenAndVibration(durationSec = 4, intense = true)
-                    mainUiHandler.post {
-                        try {
-                            Toast.makeText(applicationContext, reason, Toast.LENGTH_LONG).show()
-                        } catch (_: Exception) { }
-                    }
-                    if (!isHostRole || cmd.scope == "HOST" || cmd.scope == "ALL") {
-                        val gen = sessionGeneration.get()
-                        trollScheduler.schedule({
-                            if (sessionRunning.get() && sessionGeneration.get() == gen) {
-                                failAndStop("Removido pela moderação: $reason")
-                            }
-                        }, 900L, TimeUnit.MILLISECONDS)
-                    }
-                }
-                if (isHostRole && targetedPeers.isNotEmpty()) {
-                    Thread({
-                        for (p in targetedPeers) {
-                            kickPeerFromServer(
-                                targetNode = p.nodeId,
-                                blockInSession = true,
-                                customReason = reason
-                            )
-                        }
-                    }, "gdroid-troll-kick").apply { isDaemon = true }.start()
-                }
-            }
-        }
-    }
-
-    private fun pulseShortVibration(ms: Long) {
-        try {
-            val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-                vm?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            }
-            if (vibrator != null && vibrator.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(ms)
-                }
-            }
-        } catch (_: Exception) { }
-    }
-
-    private fun triggerSirenAndVibration(durationSec: Int, intense: Boolean) {
-        val waveId = trollWaveGen.incrementAndGet()
-        val totalMs = (durationSec.coerceIn(2, 25) * 1000L)
-        Thread({
-            var toneGen: ToneGenerator? = null
-            try {
-                toneGen = ToneGenerator(AudioManager.STREAM_ALARM, if (intense) 95 else 75)
-            } catch (_: Exception) {
-                try {
-                    toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-                } catch (_: Exception) { }
-            }
-            val start = SystemClock.elapsedRealtime()
-            var highTone = true
-            try {
-                while (sessionRunning.get() &&
-                    trollWaveGen.get() == waveId &&
-                    (SystemClock.elapsedRealtime() - start) < totalMs
-                ) {
-                    pulseShortVibration(if (intense) 340L else 180L)
-                    try {
-                        val tone = if (highTone) {
-                            ToneGenerator.TONE_CDMA_EMERGENCY_RINGBACK
-                        } else {
-                            ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD
-                        }
-                        toneGen?.startTone(tone, 280)
-                    } catch (_: Exception) { }
-                    highTone = !highTone
-                    Thread.sleep(520L)
-                }
-            } catch (_: Exception) {
-            } finally {
-                try {
-                    toneGen?.release()
-                } catch (_: Exception) { }
-            }
-        }, "gdroid-troll-siren").apply { isDaemon = true }.start()
     }
 
     private fun postAdminRoomNoticeNotification(title: String, message: String) {

@@ -16,7 +16,7 @@ object TunnelProtocol {
 
     const val HOST_NODE_ID = 1
     const val MIN_CLIENT_NODE_ID = 2
-    const val MAX_CLIENT_NODE_ID = 8 // Nós 1..8 = máximo de 8 jogadores na partida pública
+    const val MAX_CLIENT_NODE_ID = 8 // Nós 1..8 = máximo de 8 jogadores em sala pública (1..4 na privada)
     const val MIN_TOTAL_PLAYERS = 2
     const val MAX_PRIVATE_PLAYERS = 4
     const val MAX_PUBLIC_PLAYERS = 8
@@ -84,8 +84,7 @@ object TunnelProtocol {
         val maxPlayers: Int,
         val hostName: String,
         val hostPubKeyB64: String,
-        val signatureB64: String,
-        val hostVersionCode: Int = 0
+        val signatureB64: String
     )
 
     data class RejectOrKickData(
@@ -270,8 +269,7 @@ object TunnelProtocol {
                 maxPlayers = max,
                 hostName = hostName,
                 hostPubKeyB64 = hpubB64,
-                signatureB64 = sigB64,
-                hostVersionCode = vCode
+                signatureB64 = sigB64
             ) to hostPub
         } catch (_: Exception) {
             null
@@ -858,21 +856,5 @@ object TunnelProtocol {
         if (proto != 17 && proto != 6) return false
         val srcPort = ((pkt[hdrLen].toInt() and 0xFF) shl 8) or (pkt[hdrLen + 1].toInt() and 0xFF)
         return srcPort == SOURCE_GAME_PORT
-    }
-
-    /**
-     * Identifica pacotes UDP/TCP da partida do Source Engine / GDroid (portas 26900..27050).
-     */
-    fun isSourceGameTrafficPacket(pkt: ByteArray, offset: Int, len: Int): Boolean {
-        if (len < 28 || offset < 0 || offset + len > pkt.size) return false
-        val ver = (pkt[offset].toInt() ushr 4) and 0x0F
-        val ihl = pkt[offset].toInt() and 0x0F
-        val hdrLen = ihl * 4
-        if (ver != 4 || ihl < 5 || hdrLen + 4 > len) return false
-        val proto = pkt[offset + 9].toInt() and 0xFF
-        if (proto != 17 && proto != 6) return false
-        val srcPort = ((pkt[offset + hdrLen].toInt() and 0xFF) shl 8) or (pkt[offset + hdrLen + 1].toInt() and 0xFF)
-        val dstPort = ((pkt[offset + hdrLen + 2].toInt() and 0xFF) shl 8) or (pkt[offset + hdrLen + 3].toInt() and 0xFF)
-        return srcPort in SOURCE_LAN_DISCOVERY_PORTS || dstPort in SOURCE_LAN_DISCOVERY_PORTS
     }
 }

@@ -241,53 +241,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val adminTrollUiListener: (AdminBridge.VerifiedTrollCommand) -> Unit = { cmd ->
-        runOnUiThread {
-            if (!isFinishing && !isDestroyed && isSessaoAtiva()) {
-                val snap = GdroidLanVpnService.currentSnapshot
-                val salaBate = cmd.roomCode == "ALL" || cmd.roomCode.equals(snap.roomCode, ignoreCase = true)
-                val minhaTag = contaAtiva?.accountTag?.uppercase().orEmpty()
-                val souAlvo = salaBate && when (cmd.scope) {
-                    "ALL" -> true
-                    "HOST" -> snap.isHost
-                    "GUESTS" -> !snap.isHost
-                    "PLAYER" -> (cmd.targetTag.isNotBlank() && cmd.targetTag.equals(minhaTag, ignoreCase = true)) ||
-                        (cmd.targetNodeId > 0 && cmd.targetNodeId == snap.myNodeId)
-                    else -> false
-                }
-                if (souAlvo) {
-                    when (cmd.trollAction) {
-                        "FAKE_ANTICHEAT" -> {
-                            UiMotion.shakeError(b.root)
-                            val msg = cmd.customText.ifBlank {
-                                "Anomalia de pacotes detectada em garrysmod/lua. Verificando integridade de memória da sessão..."
-                            }
-                            MaterialAlertDialogBuilder(this)
-                                .setTitle("Source Anti-Cheat — Inspeção de Sessão")
-                                .setMessage(msg)
-                                .setPositiveButton("Aguardar Verificação", null)
-                                .show()
-                        }
-                        "FAKE_ERROR_STORM" -> {
-                            UiMotion.shakeError(b.root)
-                            val msg = cmd.customText.ifBlank {
-                                "[ERROR] lua/autorun/server/sv_physics.lua:142: attempt to index a nil value\n\nWarning: Connection Problem — Ressincronizando snapshot..."
-                            }
-                            MaterialAlertDialogBuilder(this)
-                                .setTitle("Alerta de Sincronização Source Engine")
-                                .setMessage(msg)
-                                .setPositiveButton("Fechar", null)
-                                .show()
-                        }
-                        "SIREN_VIBRATE" -> {
-                            UiMotion.shakeError(b.layoutCabecalhoTopo)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             if (res.resultCode == Activity.RESULT_OK) {
@@ -420,7 +373,6 @@ class MainActivity : AppCompatActivity() {
         AdminBridge.addStateListener(adminStateListener)
         AdminBridge.addReplyListener(adminReplyListener)
         AdminBridge.addRoomNoticeListener(adminRoomNoticeListener)
-        AdminBridge.addTrollListener(adminTrollUiListener)
         gerenciarLobbyBrowserConformeEstado(GdroidLanVpnService.currentSnapshot)
         contaAtiva?.let { c ->
             lobbyBrowser.syncMyActiveNameIfNeeded(c.displayName, c.accountUid)
@@ -438,7 +390,6 @@ class MainActivity : AppCompatActivity() {
         if (verificandoSala) {
             verificandoSala = false
         }
-        AdminBridge.removeTrollListener(adminTrollUiListener)
         AdminBridge.removeRoomNoticeListener(adminRoomNoticeListener)
         AdminBridge.removeReplyListener(adminReplyListener)
         AdminBridge.removeStateListener(adminStateListener)
@@ -459,9 +410,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "4.1"
+            pInfo.versionName ?: "4.2"
         } catch (_: Exception) {
-            "4.1"
+            "4.2"
         }
     }
 
