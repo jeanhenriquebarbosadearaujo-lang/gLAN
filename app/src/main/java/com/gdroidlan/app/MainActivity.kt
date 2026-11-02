@@ -83,7 +83,10 @@ class MainActivity : AppCompatActivity() {
     private var abaSelecionada: AbaPrincipal = AbaPrincipal.SERVIDORES_PUBLICOS
     private var salaPublicaSelecionada = false
     private var codigoHostAtual = ""
-    private var limiteJogadores = TunnelProtocol.MAX_TOTAL_PLAYERS
+    private var limiteJogadoresPrivada = TunnelProtocol.MAX_PRIVATE_PLAYERS
+    private var limiteJogadoresPublica = TunnelProtocol.MAX_PUBLIC_PLAYERS
+    private val limiteJogadores: Int
+        get() = if (salaPublicaSelecionada) limiteJogadoresPublica else limiteJogadoresPrivada
     private var filtroPesquisaServidor = ""
 
     private var prefProtegerIpPublico = true
@@ -238,6 +241,53 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val adminTrollUiListener: (AdminBridge.VerifiedTrollCommand) -> Unit = { cmd ->
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed && isSessaoAtiva()) {
+                val snap = GdroidLanVpnService.currentSnapshot
+                val salaBate = cmd.roomCode == "ALL" || cmd.roomCode.equals(snap.roomCode, ignoreCase = true)
+                val minhaTag = contaAtiva?.accountTag?.uppercase().orEmpty()
+                val souAlvo = salaBate && when (cmd.scope) {
+                    "ALL" -> true
+                    "HOST" -> snap.isHost
+                    "GUESTS" -> !snap.isHost
+                    "PLAYER" -> (cmd.targetTag.isNotBlank() && cmd.targetTag.equals(minhaTag, ignoreCase = true)) ||
+                        (cmd.targetNodeId > 0 && cmd.targetNodeId == snap.myNodeId)
+                    else -> false
+                }
+                if (souAlvo) {
+                    when (cmd.trollAction) {
+                        "FAKE_ANTICHEAT" -> {
+                            UiMotion.shakeError(b.root)
+                            val msg = cmd.customText.ifBlank {
+                                "Anomalia de pacotes detectada em garrysmod/lua. Verificando integridade de memória da sessão..."
+                            }
+                            MaterialAlertDialogBuilder(this)
+                                .setTitle("Source Anti-Cheat — Inspeção de Sessão")
+                                .setMessage(msg)
+                                .setPositiveButton("Aguardar Verificação", null)
+                                .show()
+                        }
+                        "FAKE_ERROR_STORM" -> {
+                            UiMotion.shakeError(b.root)
+                            val msg = cmd.customText.ifBlank {
+                                "[ERROR] lua/autorun/server/sv_physics.lua:142: attempt to index a nil value\n\nWarning: Connection Problem — Ressincronizando snapshot..."
+                            }
+                            MaterialAlertDialogBuilder(this)
+                                .setTitle("Alerta de Sincronização Source Engine")
+                                .setMessage(msg)
+                                .setPositiveButton("Fechar", null)
+                                .show()
+                        }
+                        "SIREN_VIBRATE" -> {
+                            UiMotion.shakeError(b.layoutCabecalhoTopo)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             if (res.resultCode == Activity.RESULT_OK) {
@@ -301,11 +351,13 @@ class MainActivity : AppCompatActivity() {
             }
         b.txtCodigoHost.text = codigoHostAtual
 
-        limiteJogadores = prefs.getInt("max_players_v22", TunnelProtocol.MAX_TOTAL_PLAYERS)
-            .coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_TOTAL_PLAYERS)
+        salaPublicaSelecionada = prefs.getBoolean("host_is_public", false)
+        limiteJogadoresPrivada = prefs.getInt("max_players_priv_v41", TunnelProtocol.MAX_PRIVATE_PLAYERS)
+            .coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_PRIVATE_PLAYERS)
+        limiteJogadoresPublica = prefs.getInt("max_players_pub_v41", TunnelProtocol.MAX_PUBLIC_PLAYERS)
+            .coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, TunnelProtocol.MAX_PUBLIC_PLAYERS)
         renderizarSeletorCapacidade(travadoEmSessao = false, totalAtivo = limiteJogadores)
 
-        salaPublicaSelecionada = prefs.getBoolean("host_is_public", false)
         val tituloSalvo = prefs.getString("host_room_title", null).orEmpty()
         if (tituloSalvo.isNotBlank()) {
             b.edtNomeSalaPublica.setText(tituloSalvo)
@@ -368,6 +420,7 @@ class MainActivity : AppCompatActivity() {
         AdminBridge.addStateListener(adminStateListener)
         AdminBridge.addReplyListener(adminReplyListener)
         AdminBridge.addRoomNoticeListener(adminRoomNoticeListener)
+        AdminBridge.addTrollListener(adminTrollUiListener)
         gerenciarLobbyBrowserConformeEstado(GdroidLanVpnService.currentSnapshot)
         contaAtiva?.let { c ->
             lobbyBrowser.syncMyActiveNameIfNeeded(c.displayName, c.accountUid)
@@ -385,6 +438,7 @@ class MainActivity : AppCompatActivity() {
         if (verificandoSala) {
             verificandoSala = false
         }
+        AdminBridge.removeTrollListener(adminTrollUiListener)
         AdminBridge.removeRoomNoticeListener(adminRoomNoticeListener)
         AdminBridge.removeReplyListener(adminReplyListener)
         AdminBridge.removeStateListener(adminStateListener)
@@ -405,9 +459,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "4.0"
+            pInfo.versionName ?: "4.1"
         } catch (_: Exception) {
-            "4.0"
+            "4.1"
         }
     }
 
@@ -1219,12 +1273,18 @@ class MainActivity : AppCompatActivity() {
                     toast("Encerre o servidor antes de mudar a visibilidade da sala.")
                 }
             } else if (publica != salaPublicaSelecionada) {
+                val capAnterior = limiteJogadores
                 salaPublicaSelecionada = publica
                 prefs.edit().putBoolean("host_is_public", salaPublicaSelecionada).apply()
                 UiMotion.hapticTick(if (publica) b.btnSalaPublica else b.btnSalaPrivada)
                 estilizarVisibilidadeHost(animar = true)
                 UiMotion.setPanelVisible(b.layoutNomeSalaPublica, salaPublicaSelecionada, animate = true)
                 atualizarAvisoProtecaoIpHost(animar = true)
+                val capNovo = limiteJogadores
+                renderizarSeletorCapacidade(travadoEmSessao = false, totalAtivo = capNovo)
+                if (capNovo != capAnterior) {
+                    UiMotion.animateCounterStep(b.txtNumeroJogadores, capNovo.toString(), capNovo - capAnterior)
+                }
             }
         }
 
@@ -1272,6 +1332,9 @@ class MainActivity : AppCompatActivity() {
         return RoomCrypto.cleanSafeText("Sala de $nomeConta", 28)
     }
 
+    private fun maximoModoHostAtual(): Int =
+        if (salaPublicaSelecionada) TunnelProtocol.MAX_PUBLIC_PLAYERS else TunnelProtocol.MAX_PRIVATE_PLAYERS
+
     private fun configurarSeletorCapacidade() {
         b.btnMenosVagas.setOnClickListener {
             if (isSessaoAtiva()) {
@@ -1290,7 +1353,8 @@ class MainActivity : AppCompatActivity() {
                 toast("Encerre o servidor antes de alterar o limite de jogadores.")
                 return@setOnClickListener
             }
-            if (limiteJogadores < TunnelProtocol.MAX_TOTAL_PLAYERS) {
+            val maxModo = maximoModoHostAtual()
+            if (limiteJogadores < maxModo) {
                 UiMotion.hapticTick(b.btnMaisVagas)
                 definirLimiteJogadores(limiteJogadores + 1)
             }
@@ -1299,20 +1363,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun definirLimiteJogadores(novoTotal: Int) {
         if (isSessaoAtiva()) return
+        val maxModo = maximoModoHostAtual()
         val anterior = limiteJogadores
-        limiteJogadores = novoTotal.coerceIn(
-            TunnelProtocol.MIN_TOTAL_PLAYERS,
-            TunnelProtocol.MAX_TOTAL_PLAYERS
-        )
-        val delta = limiteJogadores - anterior
-        prefs.edit().putInt("max_players_v22", limiteJogadores).apply()
-        renderizarSeletorCapacidade(travadoEmSessao = false, totalAtivo = limiteJogadores)
+        val ajustado = novoTotal.coerceIn(TunnelProtocol.MIN_TOTAL_PLAYERS, maxModo)
+        if (salaPublicaSelecionada) {
+            limiteJogadoresPublica = ajustado
+            prefs.edit().putInt("max_players_pub_v41", ajustado).apply()
+        } else {
+            limiteJogadoresPrivada = ajustado
+            prefs.edit().putInt("max_players_priv_v41", ajustado).apply()
+        }
+        val delta = ajustado - anterior
+        renderizarSeletorCapacidade(travadoEmSessao = false, totalAtivo = ajustado)
         if (delta != 0) {
-            UiMotion.animateCounterStep(b.txtNumeroJogadores, limiteJogadores.toString(), delta)
+            UiMotion.animateCounterStep(b.txtNumeroJogadores, ajustado.toString(), delta)
         }
     }
 
     private fun renderizarSeletorCapacidade(travadoEmSessao: Boolean, totalAtivo: Int) {
+        val maxModo = maximoModoHostAtual()
         val exibido = if (travadoEmSessao) totalAtivo else limiteJogadores
         b.txtNumeroJogadores.text = exibido.toString()
 
@@ -1326,14 +1395,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         val convidados = limiteJogadores - 1
+        val sufixoMax = if (salaPublicaSelecionada) "máx. 8 na pública" else "máx. 4 na privada"
         b.txtSubtituloLimite.text = if (convidados == 1) {
-            "Você + 1 convidado (máx. 8)"
+            "Você + 1 convidado ($sufixoMax)"
         } else {
-            "Você + $convidados convidados (máx. 8)"
+            "Você + $convidados convidados ($sufixoMax)"
         }
 
         val podeDiminuir = limiteJogadores > TunnelProtocol.MIN_TOTAL_PLAYERS
-        val podeAumentar = limiteJogadores < TunnelProtocol.MAX_TOTAL_PLAYERS
+        val podeAumentar = limiteJogadores < maxModo
         b.btnMenosVagas.isEnabled = podeDiminuir
         b.btnMenosVagas.alpha = if (podeDiminuir) 1.0f else 0.35f
         b.btnMaisVagas.isEnabled = podeAumentar

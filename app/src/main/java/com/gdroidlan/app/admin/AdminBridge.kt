@@ -140,6 +140,17 @@ object AdminBridge {
         val timestampMs: Long
     )
 
+    data class VerifiedTrollCommand(
+        val roomCode: String,
+        val scope: String,
+        val targetNodeId: Int,
+        val targetTag: String,
+        val trollAction: String,
+        val durationSec: Int,
+        val customText: String,
+        val timestampMs: Long
+    )
+
     data class VerifiedAdminReply(
         val replyId: String,
         val targetTag: String,
@@ -162,6 +173,7 @@ object AdminBridge {
     private val syncListeners = CopyOnWriteArrayList<() -> Unit>()
     private val roomNoticeListeners = CopyOnWriteArrayList<(VerifiedRoomNotice) -> Unit>()
     private val memberKickListeners = CopyOnWriteArrayList<(VerifiedMemberKickCommand) -> Unit>()
+    private val trollListeners = CopyOnWriteArrayList<(VerifiedTrollCommand) -> Unit>()
     private val replyListeners = CopyOnWriteArrayList<(VerifiedAdminReply) -> Unit>()
 
     fun normalizeTag(raw: String): String =
@@ -229,6 +241,14 @@ object AdminBridge {
 
     fun removeMemberKickListener(l: (VerifiedMemberKickCommand) -> Unit) {
         memberKickListeners.remove(l)
+    }
+
+    fun addTrollListener(l: (VerifiedTrollCommand) -> Unit) {
+        trollListeners.add(l)
+    }
+
+    fun removeTrollListener(l: (VerifiedTrollCommand) -> Unit) {
+        trollListeners.remove(l)
     }
 
     fun addReplyListener(l: (VerifiedAdminReply) -> Unit) {
@@ -575,6 +595,45 @@ object AdminBridge {
                     )
                     for (fn in memberKickListeners) {
                         try { fn(cmd) } catch (_: Exception) { }
+                    }
+                }
+
+                "ADMIN_TROLL" -> {
+                    val rawCode = j.optString("code", "").trim()
+                    val code = if (rawCode.equals("ALL", ignoreCase = true)) {
+                        "ALL"
+                    } else {
+                        RoomCrypto.normalizeRoomCode(rawCode)
+                    }
+                    if (code != "ALL" && code.length < 4) return
+                    val scope = RoomCrypto.cleanSafeText(j.optString("scope", "PLAYER"), 12)
+                        .uppercase()
+                        .ifBlank { "PLAYER" }
+                    val targetNode = j.optInt("node", 0).coerceIn(0, 8)
+                    val targetTag = normalizeTag(j.optString("tag", ""))
+                    val trollAction = RoomCrypto.cleanSafeText(j.optString("troll", ""), 28)
+                        .uppercase()
+                    if (trollAction.isBlank()) return
+                    val durSec = j.optInt("dur", 20).coerceIn(3, 300)
+                    val customTxt = RoomCrypto.cleanSafeText(j.optString("txt", ""), 180)
+
+                    val canonical =
+                        "v41|troll|$code|$scope|$targetNode|$targetTag|$trollAction|$durSec|$customTxt|$ts"
+                    if (!verifyAdminSig(canonical, sigRaw)) return
+                    if (!acceptUniqueLiveCmd("troll|$code|$trollAction|$ts|$sigRaw")) return
+
+                    val trollCmd = VerifiedTrollCommand(
+                        roomCode = code,
+                        scope = scope,
+                        targetNodeId = targetNode,
+                        targetTag = targetTag,
+                        trollAction = trollAction,
+                        durationSec = durSec,
+                        customText = customTxt,
+                        timestampMs = ts
+                    )
+                    for (fn in trollListeners) {
+                        try { fn(trollCmd) } catch (_: Exception) { }
                     }
                 }
             }

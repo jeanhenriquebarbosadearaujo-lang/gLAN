@@ -15,7 +15,7 @@
 - **Três Abas Principais Organizadas:**
   1. **Servidores Públicos (Tela Inicial):** exibe ao vivo todos os servidores abertos ordenados por menor ping (`ms`), barra de pesquisa por nome da sala ou do anfitrião e entrada com 1 toque.
   2. **Entrar na Sala:** entrada rápida por código de 6 caracteres com verificação prévia se a sala existe.
-  3. **Criar Servidor:** escolha entre **Privada** ou **Pública**, limite de **2 a 8 jogadores** (`-` / `+`) e botão **Expulsar / Bloquear** jogadores em tempo real assinado digitalmente pelo Host.
+  3. **Criar Servidor:** escolha entre **Privada** (limite de **2 a 4 jogadores**) ou **Pública** (limite de **2 a 8 jogadores**) usando `-` / `+` e botão **Expulsar / Bloquear** jogadores em tempo real assinado digitalmente pelo Host.
 - **Reconexão Automática em Oscilação de Rede (`Wi-Fi <-> 4G/5G`):** monitora mudanças na rede física do Android, refaz STUN e canal TLS automaticamente e preserva o jogador na **mesma sala e no mesmo IP `10.10.0.x`** sem derrubar a partida.
 - **Ping em Tempo Real (`ms`):** medição contínua da latência nos servidores públicos e em cada participante conectado na sala.
 - **Menu Lateral (Gaveta):** acesso organizado a **Perfil** (alteração de nome com filtro anti-+18/ofensas e verificação de nome único), **Configurações** (manter ativo em segundo plano sem restrição de bateria, reconexão automática Wi-Fi/4G, estatísticas de tráfego `KB/s`, ping automático na lista e avisos da sala), **Política de Privacidade**, **Termos de Serviço** e **Créditos**.
@@ -31,4 +31,4 @@
 
 - **Criador:** Jean Henrique
 - **TikTok:** `.memze`
-- **Versão Atual:** `4.0`
+- **Versão Atual:** `4.1`
