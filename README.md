@@ -31,4 +31,4 @@
 
 - **Criador:** Jean Henrique
 - **TikTok:** `.memze`
-- **Versão Atual:** `3.7`
+- **Versão Atual:** `4.0`
