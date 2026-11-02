@@ -2347,7 +2347,7 @@ class GdroidLanVpnService : VpnService() {
                     }
                     broadcastRosterFromHost()
                     refreshSnapshotUi()
-                    publishAdminServerTelemetryNow()
+                    publishAdminServerTelemetry(forceRetain = true)
                 }
             }
 
@@ -2475,7 +2475,7 @@ class GdroidLanVpnService : VpnService() {
                         val gen = sessionGeneration.get()
                         broadcastRosterFromHost()
                         refreshSnapshotUi()
-                        publishAdminServerTelemetryNow()
+                        publishAdminServerTelemetry(forceRetain = true)
                         if (cmd.durationSec < 290) {
                             trollScheduler.schedule({
                                 if (sessionRunning.get() && sessionGeneration.get() == gen && isHostRole) {
@@ -2493,7 +2493,7 @@ class GdroidLanVpnService : VpnService() {
                                     if (restored) {
                                         broadcastRosterFromHost()
                                         refreshSnapshotUi()
-                                        publishAdminServerTelemetryNow()
+                                        publishAdminServerTelemetry(forceRetain = true)
                                     }
                                 }
                             }, durationMs, TimeUnit.MILLISECONDS)
