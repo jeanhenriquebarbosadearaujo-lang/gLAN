@@ -385,9 +385,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.6"
+            pInfo.versionName ?: "3.7"
         } catch (_: Exception) {
-            "3.6"
+            "3.7"
         }
     }
 

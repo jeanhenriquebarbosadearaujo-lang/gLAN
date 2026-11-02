@@ -593,7 +593,7 @@ class GdroidLanVpnService : VpnService() {
         blockedAccountUids.clear()
         blockedPlayerNames.clear()
         remoteRosterCache = emptyList()
-        hostGamePortOpen = if (asHost) SourceGameDetector.probeLocalSourceServer() else false
+        hostGamePortOpen = false
         lastHostGamePortTrafficAtMs = 0L
         lastNotifSignature = ""
         txBytesTotal.set(0L)
@@ -653,6 +653,7 @@ class GdroidLanVpnService : VpnService() {
                         failAndStop("Permissão de VPN recusada ou indisponível no aparelho.")
                         return@Thread
                     }
+                    hostGamePortOpen = SourceGameDetector.probeLocalSourceServer()
                 }
 
                 val initialTopics = ArrayList<String>(6).apply {
@@ -749,13 +750,16 @@ class GdroidLanVpnService : VpnService() {
             tunBoundNodeId = 0
 
             val virtualIp = TunnelProtocol.nodeIp(nodeId)
-            val pfd = Builder()
+            val builder = Builder()
                 .setSession("gLAN ($activeRoomCode)")
                 .setMtu(TunnelProtocol.VPN_MTU)
                 .setBlocking(true)
                 .addAddress(virtualIp, 24)
                 .addRoute("10.10.0.0", 24)
-                .establish() ?: return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                builder.setMetered(false)
+            }
+            val pfd = builder.establish() ?: return false
 
             tunInterface = pfd
             tunBoundNodeId = nodeId
@@ -1639,8 +1643,12 @@ class GdroidLanVpnService : VpnService() {
                         mqttClient?.forceReconnectNow()
                     }
 
-                    val localGameOpen = SourceGameDetector.probeLocalSourceServer() ||
-                        (now - lastHostGamePortTrafficAtMs < 12_000L)
+                    val passiveGameTrafficActive = (now - lastHostGamePortTrafficAtMs < 10_000L)
+                    val localGameOpen = when {
+                        passiveGameTrafficActive -> true
+                        tick % 2 == 0 -> SourceGameDetector.probeLocalSourceServer()
+                        else -> hostGamePortOpen
+                    }
                     val gameOpenChanged = (localGameOpen != hostGamePortOpen)
                     if (gameOpenChanged) {
                         hostGamePortOpen = localGameOpen
