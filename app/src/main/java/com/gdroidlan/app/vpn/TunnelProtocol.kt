@@ -63,7 +63,8 @@ object TunnelProtocol {
         val virtualIp: String,
         val isHost: Boolean,
         val pingMs: Long,
-        val routeLabel: String
+        val routeLabel: String,
+        val accountTag: String = ""
     )
 
     data class JoinRequestData(
@@ -71,7 +72,8 @@ object TunnelProtocol {
         val accountUid: Long,
         val displayName: String,
         val clientPubKeyB64: String,
-        val preferredNodeId: Int = 0
+        val preferredNodeId: Int = 0,
+        val accountTag: String = ""
     )
 
     data class JoinAckData(
@@ -148,13 +150,18 @@ object TunnelProtocol {
         accountUid: Long,
         displayName: String,
         clientPubKeyB64: String,
-        preferredNodeId: Int = 0
+        preferredNodeId: Int = 0,
+        accountTag: String = ""
     ): ByteArray {
+        val cleanTag = accountTag.uppercase().replace(Regex("[^A-Z0-9]"), "").take(16)
         val j = JSONObject().apply {
             put("sid", sessionId)
             put("uid", accountUid)
             put("name", RoomCrypto.cleanSafeText(displayName, 24).ifBlank { "Jogador" })
             put("cpub", clientPubKeyB64)
+            if (cleanTag.length >= 4) {
+                put("tag", cleanTag)
+            }
             if (preferredNodeId in MIN_CLIENT_NODE_ID..MAX_CLIENT_NODE_ID) {
                 put("prefNode", preferredNodeId)
             }
@@ -181,12 +188,14 @@ object TunnelProtocol {
                 }
             }
             val prefNode = j.optInt("prefNode", 0)
+            val cleanTag = j.optString("tag", "").uppercase().replace(Regex("[^A-Z0-9]"), "").take(16)
             JoinRequestData(
                 sessionId = j.getLong("sid"),
                 accountUid = j.optLong("uid", 0L),
                 displayName = RoomCrypto.cleanSafeText(j.optString("name", ""), 24).ifBlank { "Jogador" },
                 clientPubKeyB64 = cpub,
-                preferredNodeId = if (prefNode in MIN_CLIENT_NODE_ID..MAX_CLIENT_NODE_ID) prefNode else 0
+                preferredNodeId = if (prefNode in MIN_CLIENT_NODE_ID..MAX_CLIENT_NODE_ID) prefNode else 0,
+                accountTag = cleanTag
             )
         } catch (_: Exception) {
             null

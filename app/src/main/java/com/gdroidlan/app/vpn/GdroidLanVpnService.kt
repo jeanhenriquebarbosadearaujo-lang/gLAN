@@ -81,7 +81,8 @@ class GdroidLanVpnService : VpnService() {
         @Volatile var sessionId: Long,
         @Volatile var accountUid: Long,
         @Volatile var displayName: String,
-        @Volatile var pairwiseCipher: RoomCrypto.PairwiseCipher
+        @Volatile var pairwiseCipher: RoomCrypto.PairwiseCipher,
+        @Volatile var accountTag: String = ""
     ) {
         val candidateEndpoints = CopyOnWriteArrayList<InetSocketAddress>()
         @Volatile var activeDirectEndpoint: InetSocketAddress? = null
@@ -227,6 +228,7 @@ class GdroidLanVpnService : VpnService() {
     @Volatile private var activeMapMode = ""
     @Volatile private var hostGamePortOpen = false
     @Volatile private var lastHostGamePortTrafficAtMs = 0L
+    @Volatile private var sessionStartedAtMs = 0L
     @Volatile private var lastNotifSignature = ""
     @Volatile private var hostDisplayNameOnClient = "Anfitrião"
     @Volatile private var remoteRosterCache: List<TunnelProtocol.RoomMemberInfo> = emptyList()
@@ -238,6 +240,23 @@ class GdroidLanVpnService : VpnService() {
                 failAndStop("Conta suspensa pela administração: $banReason")
             } else if (AdminBridge.isRoomRecentlyKilledByAdmin(activeRoomCode)) {
                 failAndStop("Esta sala foi encerrada pela administração do gLAN.")
+            } else if (isHostRole) {
+                // Se algum convidado na sala acabou de ter a #TAG suspensa, remove-o automaticamente
+                val now = System.currentTimeMillis()
+                val bannedPeers = peersByNode.values.filter { peer ->
+                    peer.isAlive(now, autoReconnectEnabled) &&
+                        peer.accountTag.isNotBlank() &&
+                        AdminBridge.checkAccountBanReason(peer.accountTag, now) != null
+                }
+                for (bp in bannedPeers) {
+                    Thread({
+                        kickPeerFromServer(
+                            targetNode = bp.nodeId,
+                            blockInSession = true,
+                            customReason = "Sua conta foi suspensa pela administração do gLAN."
+                        )
+                    }, "gdroid-ban-kick").start()
+                }
             }
         }
     }
@@ -248,10 +267,52 @@ class GdroidLanVpnService : VpnService() {
         }
     }
 
+    @Volatile private var lastRetainedTelemetrySig = ""
+    @Volatile private var lastRetainedTelemetryAtMs = 0L
+
+    private val adminSyncListener: () -> Unit = {
+        if (sessionRunning.get() && isHostRole) {
+            Thread({
+                publishAdminServerTelemetry(forceRetain = true)
+                if (isPublicRoom) {
+                    publishPublicLobbyBeacon()
+                }
+            }, "gdroid-admin-sync").apply { isDaemon = true }.start()
+        }
+    }
+
+    private val adminRoomNoticeListener: (AdminBridge.VerifiedRoomNotice) -> Unit = { notice ->
+        if (sessionRunning.get() && notice.roomCode == activeRoomCode) {
+            onModerationEventToast?.invoke("${notice.title}: ${notice.message}")
+        }
+    }
+
+    private val adminMemberKickListener: (AdminBridge.VerifiedMemberKickCommand) -> Unit = { cmd ->
+        if (sessionRunning.get() && isHostRole && cmd.roomCode == activeRoomCode) {
+            val match = peersByNode.values.firstOrNull { p ->
+                (cmd.targetTag.isNotBlank() && p.accountTag.equals(cmd.targetTag, ignoreCase = true)) ||
+                    (cmd.targetNodeId in TunnelProtocol.MIN_CLIENT_NODE_ID..TunnelProtocol.MAX_CLIENT_NODE_ID &&
+                        p.nodeId == cmd.targetNodeId)
+            }
+            if (match != null) {
+                Thread({
+                    kickPeerFromServer(
+                        targetNode = match.nodeId,
+                        blockInSession = cmd.blockInSession,
+                        customReason = cmd.reason
+                    )
+                }, "gdroid-admin-rkick").start()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         AdminBridge.addStateListener(adminStateListener)
         AdminBridge.addKillListener(adminKillListener)
+        AdminBridge.addSyncListener(adminSyncListener)
+        AdminBridge.addRoomNoticeListener(adminRoomNoticeListener)
+        AdminBridge.addMemberKickListener(adminMemberKickListener)
     }
 
     @Volatile private var myNodeId: Int = 0
@@ -378,6 +439,23 @@ class GdroidLanVpnService : VpnService() {
 
                 val wantHost = (intent.action == ACTION_START_HOST)
                 isPublicRoom = wantHost && intent.getBooleanExtra(EXTRA_IS_PUBLIC, false)
+
+                val gateErr = AdminBridge.checkNetworkGateError(
+                    wantHost = wantHost,
+                    wantPublicRoom = isPublicRoom
+                )
+                if (gateErr != null) {
+                    ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    publishState(
+                        TunnelSnapshot(
+                            phase = StatusPhase.ERROR,
+                            statusText = gateErr
+                        )
+                    )
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+
                 ipProtectionActive = intent.getBooleanExtra(EXTRA_PROTECT_IP, false)
                 expectedHostPubKeyFromLobbyB64 = if (!wantHost) {
                     intent.getStringExtra(EXTRA_EXPECTED_HOST_PUBKEY).orEmpty().trim()
@@ -407,6 +485,9 @@ class GdroidLanVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        AdminBridge.removeMemberKickListener(adminMemberKickListener)
+        AdminBridge.removeRoomNoticeListener(adminRoomNoticeListener)
+        AdminBridge.removeSyncListener(adminSyncListener)
         AdminBridge.removeStateListener(adminStateListener)
         AdminBridge.removeKillListener(adminKillListener)
         stopTunnelSession(userRequested = true)
@@ -595,6 +676,9 @@ class GdroidLanVpnService : VpnService() {
         remoteRosterCache = emptyList()
         hostGamePortOpen = false
         lastHostGamePortTrafficAtMs = 0L
+        sessionStartedAtMs = System.currentTimeMillis()
+        lastRetainedTelemetrySig = ""
+        lastRetainedTelemetryAtMs = 0L
         lastNotifSignature = ""
         txBytesTotal.set(0L)
         rxBytesTotal.set(0L)
@@ -777,7 +861,11 @@ class GdroidLanVpnService : VpnService() {
     // MODERAÇÃO (EXPULSAR / BLOQUEAR) E LISTA DE PARTICIPANTES
     // =========================================================================
 
-    private fun kickPeerFromServer(targetNode: Int, blockInSession: Boolean) {
+    private fun kickPeerFromServer(
+        targetNode: Int,
+        blockInSession: Boolean,
+        customReason: String? = null
+    ) {
         val peer = peersByNode.remove(targetNode) ?: return
         sessionToNode.remove(peer.sessionId)
         if (peer.accountUid != 0L) {
@@ -792,7 +880,7 @@ class GdroidLanVpnService : VpnService() {
             blockedPlayerNames[blockKey] = peer.displayName
         }
 
-        val reason = if (blockInSession) {
+        val reason = customReason?.takeIf { it.isNotBlank() } ?: if (blockInSession) {
             "Você foi expulso e bloqueado desta sala pelo anfitrião."
         } else {
             "Você foi expulso da sala pelo anfitrião."
@@ -823,7 +911,9 @@ class GdroidLanVpnService : VpnService() {
 
         broadcastRosterFromHost()
         refreshSnapshotUi()
-        val msgHost = if (blockInSession) {
+        val msgHost = if (customReason != null) {
+            "${peer.displayName} foi removido da sala."
+        } else if (blockInSession) {
             "${peer.displayName} foi expulso e bloqueado da sala."
         } else {
             "${peer.displayName} foi expulso da sala."
@@ -842,7 +932,8 @@ class GdroidLanVpnService : VpnService() {
                 virtualIp = TunnelProtocol.HOST_VIRTUAL_IP,
                 isHost = true,
                 pingMs = 0L,
-                routeLabel = "Anfitrião"
+                routeLabel = "Anfitrião",
+                accountTag = myAccountTag
             )
         )
         val sortedClients = peersByNode.values
@@ -864,7 +955,8 @@ class GdroidLanVpnService : VpnService() {
                     virtualIp = TunnelProtocol.nodeIp(p.nodeId),
                     isHost = false,
                     pingMs = p.lastRttMs,
-                    routeLabel = route
+                    routeLabel = route,
+                    accountTag = p.accountTag
                 )
             )
         }
@@ -887,6 +979,76 @@ class GdroidLanVpnService : VpnService() {
         mqttClient?.publish("$topicRoot/h2c/ctl", enc)
         if (isPublicRoom) {
             publishPublicLobbyBeacon(currentCount = members.size)
+        }
+        publishAdminServerTelemetry(members)
+    }
+
+    private fun publishAdminServerTelemetry(
+        precomputedMembers: List<TunnelProtocol.RoomMemberInfo>? = null,
+        forceRetain: Boolean = false
+    ) {
+        if (!isHostRole || !sessionRunning.get() || activeRoomCode.isBlank()) return
+        val identity = sessionIdentity ?: return
+        val client = mqttClient ?: return
+        if (!client.isConnected()) return
+
+        val now = System.currentTimeMillis()
+        val members = precomputedMembers ?: buildHostMembersList(now)
+        val pkt = AdminBridge.buildEncryptedServerReport(
+            hostIdentity = identity,
+            isOpen = true,
+            roomCode = activeRoomCode,
+            isPublicRoom = isPublicRoom,
+            roomTitle = if (isPublicRoom) publicRoomTitle else "Sala Privada de $myDisplayName",
+            hostName = myDisplayName,
+            hostTag = myAccountTag,
+            hostUid = myAccountUid,
+            members = members,
+            maxPlayers = maxTotalPlayers,
+            ipProtected = ipProtectionActive,
+            gamePortOpen = hostGamePortOpen,
+            mapMode = activeMapMode,
+            startedAtMs = sessionStartedAtMs
+        ) ?: return
+
+        val stateSig = "$activeRoomCode|${members.size}|$maxTotalPlayers|$hostGamePortOpen|$activeMapMode|$isPublicRoom"
+        val shouldWriteRetained = forceRetain ||
+            stateSig != lastRetainedTelemetrySig ||
+            (now - lastRetainedTelemetryAtMs) >= 18_000L
+        if (shouldWriteRetained) {
+            lastRetainedTelemetrySig = stateSig
+            lastRetainedTelemetryAtMs = now
+            client.publish(AdminBridge.serverSlotTopic(activeRoomCode), pkt, retain = true)
+        }
+        client.publish(AdminBridge.SRV_LIVE_TOPIC, pkt, retain = false)
+    }
+
+    private fun publishAdminServerClose() {
+        if (activeRoomCode.isBlank()) return
+        val client = mqttClient ?: return
+        val identity = sessionIdentity
+        // Limpa imediatamente o slot retido para não deixar fantasma no broker
+        client.publish(AdminBridge.serverSlotTopic(activeRoomCode), ByteArray(0), retain = true)
+        if (identity != null) {
+            val closePkt = AdminBridge.buildEncryptedServerReport(
+                hostIdentity = identity,
+                isOpen = false,
+                roomCode = activeRoomCode,
+                isPublicRoom = isPublicRoom,
+                roomTitle = "",
+                hostName = myDisplayName,
+                hostTag = myAccountTag,
+                hostUid = myAccountUid,
+                members = emptyList(),
+                maxPlayers = maxTotalPlayers,
+                ipProtected = ipProtectionActive,
+                gamePortOpen = false,
+                mapMode = "",
+                startedAtMs = sessionStartedAtMs
+            )
+            if (closePkt != null) {
+                client.publish(AdminBridge.SRV_LIVE_TOPIC, closePkt, retain = false)
+            }
         }
     }
 
@@ -1077,6 +1239,20 @@ class GdroidLanVpnService : VpnService() {
                 val req = TunnelProtocol.parseJoinReq(plain) ?: return
                 val clientPub = RoomCrypto.decodeEcPublicKey(req.clientPubKeyB64) ?: return
 
+                if (req.accountTag.isNotBlank()) {
+                    val guestBanReason = AdminBridge.checkAccountBanReason(req.accountTag, now)
+                    if (guestBanReason != null) {
+                        val rej = roomCipher?.encrypt(
+                            TunnelProtocol.buildJoinReject(
+                                req.sessionId,
+                                "Conta suspensa pela administração: $guestBanReason"
+                            )
+                        ) ?: return
+                        mqttClient?.publish("$topicRoot/h2c/ctl", rej)
+                        return
+                    }
+                }
+
                 if (blockedSessions.contains(req.sessionId) ||
                     (req.accountUid != 0L && blockedAccountUids.contains(req.accountUid))
                 ) {
@@ -1144,12 +1320,22 @@ class GdroidLanVpnService : VpnService() {
                 val isBrandNewJoin = (existingNode == null && peersByNode[assigned] == null)
                 val peer = peersByNode[assigned]
                 if (peer == null) {
-                    peersByNode[assigned] = PeerNode(assigned, req.sessionId, req.accountUid, req.displayName, pairwise)
+                    peersByNode[assigned] = PeerNode(
+                        assigned,
+                        req.sessionId,
+                        req.accountUid,
+                        req.displayName,
+                        pairwise,
+                        req.accountTag
+                    )
                 } else {
                     peer.sessionId = req.sessionId
                     peer.accountUid = req.accountUid
                     peer.displayName = req.displayName
                     peer.pairwiseCipher = pairwise
+                    if (req.accountTag.isNotBlank()) {
+                        peer.accountTag = req.accountTag
+                    }
                     peer.activeDirectEndpoint = null
                     peer.candidateEndpoints.clear()
                     peer.lastAnyRxAt = now
@@ -1536,7 +1722,8 @@ class GdroidLanVpnService : VpnService() {
             accountUid = myAccountUid,
             displayName = myDisplayName,
             clientPubKeyB64 = myId.publicKeyBase64,
-            preferredNodeId = myNodeId
+            preferredNodeId = myNodeId,
+            accountTag = myAccountTag
         )
         val enc = roomCipher?.encrypt(frame) ?: return
         mqttClient?.publish("$topicRoot/c2h/ctl", enc)
@@ -1876,6 +2063,7 @@ class GdroidLanVpnService : VpnService() {
         if (wasRunning && myNodeId > 0) {
             try {
                 if (isHostRole) {
+                    publishAdminServerClose()
                     if (isPublicRoom) {
                         publishPublicLobbyClose()
                     }

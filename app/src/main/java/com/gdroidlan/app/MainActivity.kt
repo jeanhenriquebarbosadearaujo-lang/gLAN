@@ -222,6 +222,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val adminRoomNoticeListener: (AdminBridge.VerifiedRoomNotice) -> Unit = { aviso ->
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                val snap = GdroidLanVpnService.currentSnapshot
+                if (isSessaoAtiva() && snap.roomCode == aviso.roomCode) {
+                    UiMotion.hapticConfirm(b.layoutCabecalhoTopo)
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle(aviso.title)
+                        .setMessage(aviso.message)
+                        .setPositiveButton("Entendi", null)
+                        .show()
+                }
+            }
+        }
+    }
+
     private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             if (res.resultCode == Activity.RESULT_OK) {
@@ -351,6 +367,7 @@ class MainActivity : AppCompatActivity() {
         UpdateNotifier.addListener(updateListener)
         AdminBridge.addStateListener(adminStateListener)
         AdminBridge.addReplyListener(adminReplyListener)
+        AdminBridge.addRoomNoticeListener(adminRoomNoticeListener)
         gerenciarLobbyBrowserConformeEstado(GdroidLanVpnService.currentSnapshot)
         contaAtiva?.let { c ->
             lobbyBrowser.syncMyActiveNameIfNeeded(c.displayName, c.accountUid)
@@ -368,6 +385,7 @@ class MainActivity : AppCompatActivity() {
         if (verificandoSala) {
             verificandoSala = false
         }
+        AdminBridge.removeRoomNoticeListener(adminRoomNoticeListener)
         AdminBridge.removeReplyListener(adminReplyListener)
         AdminBridge.removeStateListener(adminStateListener)
         UpdateNotifier.removeListener(updateListener)
@@ -385,9 +403,9 @@ class MainActivity : AppCompatActivity() {
     private fun obterVersaoInstalada(): String {
         return try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            pInfo.versionName ?: "3.7"
+            pInfo.versionName ?: "3.9"
         } catch (_: Exception) {
-            "3.7"
+            "3.9"
         }
     }
 
@@ -872,7 +890,19 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (!estado.bannerActive || estado.bannerBody.isBlank()) {
+        if (estado.maintenanceActive) {
+            b.cardAvisoAdmin.setCardBackgroundColor(Color.parseColor("#1AF59E0B"))
+            b.cardAvisoAdmin.strokeColor = Color.parseColor("#66F59E0B")
+            b.txtTituloAvisoAdmin.setTextColor(Color.parseColor("#F59E0B"))
+            b.txtTituloAvisoAdmin.text = "REDE EM MANUTENÇÃO PROGRAMADA"
+            b.txtCorpoAvisoAdmin.text = estado.maintenanceMessage.ifBlank {
+                "A rede do gLAN está em manutenção temporária pela administração. Tente novamente em instantes."
+            }
+            UiMotion.setPanelVisible(b.cardAvisoAdmin, true)
+            return
+        }
+
+        if (!estado.isBannerCurrentlyActive()) {
             UiMotion.setPanelVisible(b.cardAvisoAdmin, false)
             return
         }
@@ -1585,6 +1615,14 @@ class MainActivity : AppCompatActivity() {
             }
             when (abaSelecionada) {
                 AbaPrincipal.CRIAR_SERVIDOR -> {
+                    val gateErr = AdminBridge.checkNetworkGateError(
+                        wantHost = true,
+                        wantPublicRoom = salaPublicaSelecionada
+                    )
+                    if (gateErr != null) {
+                        exibirErroSalaLocal("OPERAÇÃO BLOQUEADA", gateErr)
+                        return@setOnClickListener
+                    }
                     if (salaPublicaSelecionada) {
                         val tituloDigitado = b.edtNomeSalaPublica.text?.toString().orEmpty()
                         if (valResSalaRecusada(tituloDigitado)) return@setOnClickListener
@@ -1671,6 +1709,11 @@ class MainActivity : AppCompatActivity() {
         if (AdminBridge.isRoomRecentlyKilledByAdmin(codigoNormalizado)) {
             lobbyBrowser.removeRoomImmediately(codigoNormalizado)
             exibirErroSalaLocal("SALA ENCERRADA", "Esta sala foi encerrada pela administração do gLAN.")
+            return
+        }
+        val gateErrJoin = AdminBridge.checkNetworkGateError(wantHost = false, wantPublicRoom = false)
+        if (gateErrJoin != null) {
+            exibirErroSalaLocal("REDE INDISPONÍVEL", gateErrJoin)
             return
         }
 
