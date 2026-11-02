@@ -441,15 +441,15 @@ class GdroidLanVpnService : VpnService() {
                 isPublicRoom = wantHost && intent.getBooleanExtra(EXTRA_IS_PUBLIC, false)
 
                 val gateErr = AdminBridge.checkNetworkGateError(
-                    wantHost = wantHost,
-                    wantPublicRoom = isPublicRoom
+                    installedVersionCode = OfficialVersionCert.BUILT_VERSION_CODE,
+                    creatingPublicRoom = isPublicRoom
                 )
                 if (gateErr != null) {
                     ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
                     publishState(
                         TunnelSnapshot(
                             phase = StatusPhase.ERROR,
-                            statusText = gateErr
+                            statusText = gateErr.second
                         )
                     )
                     stopSelf()

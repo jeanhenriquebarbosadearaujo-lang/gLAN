@@ -890,19 +890,19 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (estado.maintenanceActive) {
+        if (estado.maintActive) {
             b.cardAvisoAdmin.setCardBackgroundColor(Color.parseColor("#1AF59E0B"))
             b.cardAvisoAdmin.strokeColor = Color.parseColor("#66F59E0B")
             b.txtTituloAvisoAdmin.setTextColor(Color.parseColor("#F59E0B"))
             b.txtTituloAvisoAdmin.text = "REDE EM MANUTENÇÃO PROGRAMADA"
-            b.txtCorpoAvisoAdmin.text = estado.maintenanceMessage.ifBlank {
+            b.txtCorpoAvisoAdmin.text = estado.maintMessage.ifBlank {
                 "A rede do gLAN está em manutenção temporária pela administração. Tente novamente em instantes."
             }
             UiMotion.setPanelVisible(b.cardAvisoAdmin, true)
             return
         }
 
-        if (!estado.isBannerCurrentlyActive()) {
+        if (!AdminBridge.isBannerCurrentlyActive(estado)) {
             UiMotion.setPanelVisible(b.cardAvisoAdmin, false)
             return
         }
@@ -1616,11 +1616,11 @@ class MainActivity : AppCompatActivity() {
             when (abaSelecionada) {
                 AbaPrincipal.CRIAR_SERVIDOR -> {
                     val gateErr = AdminBridge.checkNetworkGateError(
-                        wantHost = true,
-                        wantPublicRoom = salaPublicaSelecionada
+                        installedVersionCode = obterVersionCodeInstalado(),
+                        creatingPublicRoom = salaPublicaSelecionada
                     )
                     if (gateErr != null) {
-                        exibirErroSalaLocal("OPERAÇÃO BLOQUEADA", gateErr)
+                        exibirErroSalaLocal(gateErr.first, gateErr.second)
                         return@setOnClickListener
                     }
                     if (salaPublicaSelecionada) {
@@ -1711,9 +1711,12 @@ class MainActivity : AppCompatActivity() {
             exibirErroSalaLocal("SALA ENCERRADA", "Esta sala foi encerrada pela administração do gLAN.")
             return
         }
-        val gateErrJoin = AdminBridge.checkNetworkGateError(wantHost = false, wantPublicRoom = false)
+        val gateErrJoin = AdminBridge.checkNetworkGateError(
+            installedVersionCode = obterVersionCodeInstalado(),
+            creatingPublicRoom = false
+        )
         if (gateErrJoin != null) {
-            exibirErroSalaLocal("REDE INDISPONÍVEL", gateErrJoin)
+            exibirErroSalaLocal(gateErrJoin.first, gateErrJoin.second)
             return
         }
 
